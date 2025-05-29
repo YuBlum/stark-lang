@@ -1,4 +1,4 @@
-def main : fn(); {
+def main : fn() => {
   def a = 34;
   def b = 35;
   def c = a + b;
