@@ -97,8 +97,12 @@ enum token_type {
   TOK_CURLY_CLOSE,
   TOK_INT_LITERAL,
   TOK_PLUS,
+  TOK_MINUS,
+  TOK_DIV,
+  TOK_STAR,
   TOK_COMMA,
   TOK_MODULE,
+  TOK_POWER,
 };
 
 static inline const char *
@@ -118,8 +122,12 @@ token_type_string(enum token_type type) {
     case TOK_CURLY_CLOSE: return "Curly-close";
     case TOK_INT_LITERAL: return "Int-literal";
     case TOK_PLUS: return "Plus";
+    case TOK_MINUS: return "Minus";
+    case TOK_DIV: return "Div";
+    case TOK_STAR: return "Star";
     case TOK_COMMA: return "Comma";
     case TOK_MODULE: return "Module";
+    case TOK_POWER: return "Power";
   }
   return "Unknown";
 }
@@ -192,6 +200,10 @@ lex_source(const enum token_type *keywords, const char *file, const struct strin
             case '{': mial_list_push_lit(tokens, cur_pos, { 1, "{" }, TOK_CURLY_OPEN); break;
             case '}': mial_list_push_lit(tokens, cur_pos, { 1, "}" }, TOK_CURLY_CLOSE); break;
             case '+': mial_list_push_lit(tokens, cur_pos, { 1, "+" }, TOK_PLUS); break;
+            case '-': mial_list_push_lit(tokens, cur_pos, { 1, "-" }, TOK_MINUS); break;
+            case '/': mial_list_push_lit(tokens, cur_pos, { 1, "/" }, TOK_DIV); break;
+            case '*': mial_list_push_lit(tokens, cur_pos, { 1, "*" }, TOK_STAR); break;
+            case '^': mial_list_push_lit(tokens, cur_pos, { 1, "^" }, TOK_POWER); break;
             case ',': mial_list_push_lit(tokens, cur_pos, { 1, "," }, TOK_COMMA); break;
             case '#':
               if (c_next == '(') {
@@ -276,6 +288,8 @@ enum ast_node_type {
   AST_BIN_OPERATOR,
   AST_INT_LITERAL,
   AST_BLOCK,
+  AST_EXPRESSION,
+  AST_OPERATION,
 };
 
 static inline const char *
@@ -292,47 +306,184 @@ ast_node_type_string(enum ast_node_type ast_node_type) {
     case AST_INT_LITERAL: return "Int-literal";
     case AST_BIN_OPERATOR: return "Bin-operator";
     case AST_BLOCK: return "Block";
+    case AST_EXPRESSION: return "Expression";
+    case AST_OPERATION: return "Operation";
   }
   return "Unknown";
 }
 
-enum operator {
+enum operation {
   OP_NONE = 0,
-  OP_ADD,
-  OP_SUB,
+  OP_ASSIGN,
+  OP_PLUS,
+  OP_MINUS,
   OP_MUL,
   OP_DIV,
+  OP_POWER,
+  OP_COUNT,
 };
 
 static inline const char *
-operator_string(enum operator operation) {
+operation_string(enum operation operation) {
   switch (operation) {
     case OP_NONE: return "None";
-    case OP_ADD: return "Add";
-    case OP_SUB: return "Sub";
+    case OP_ASSIGN: return "Assign";
+    case OP_POWER: return "Power";
+    case OP_PLUS: return "Plus";
+    case OP_MINUS: return "Minus";
     case OP_MUL: return "Mul";
     case OP_DIV: return "Div";
+    case OP_COUNT: break;
   }
   return "Unknown";
 }
+
+static inline const char *
+operation_symbol(enum operation operation) {
+  switch (operation) {
+    case OP_NONE: return "???";
+    case OP_ASSIGN: return "=";
+    case OP_POWER: return "^";
+    case OP_PLUS: return "+";
+    case OP_MINUS: return "-";
+    case OP_MUL: return "*";
+    case OP_DIV: return "/";
+    case OP_COUNT: break;
+  }
+  return "Unknown";
+}
+
+enum precedence {
+  PRE_NONE = 0,
+  PRE_ASSIGN,
+  PRE_PLUS,
+  PRE_MINUS = PRE_PLUS,
+  PRE_MUL,
+  PRE_DIV = PRE_MUL,
+  PRE_POWER,
+  PRE_VALUE,
+};
 
 struct ast_node {
   int64_t root;
   int64_t self;
   int64_t *children;
-  enum ast_node_type type;
-  union {
-    struct string identifier;
-    int64_t int_literal;
-    struct {
-      enum operator type;
-      uint32_t precedence;
+  struct {
+    struct operator {
+      enum precedence precedence;
+      enum operation type;
     } operator;
+    union {
+      struct string identifier;
+      int64_t int_literal;
+    };
   } data;
+  struct position position;
+  enum ast_node_type type;
+  bool is_expression;
 };
 
+void
+print_ast(const struct ast_node *ast, int64_t node, int indent, bool format_expressions, bool format_values) {
+  (void)indent;
+  switch (ast[node].type) {
+    case AST_NONE: {
+      assert(0 && "AST_NONE");
+    } break;
+    case AST_MODULE: {
+      printf("%*sModule '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+      }
+      printf("%*s} Module '%.*s',\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+    } break;
+    case AST_DEF_CONST: {
+      printf("%*sConst '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+      }
+      printf("%*s} Const '%.*s',\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+    } break;
+    case AST_DEF_VAR: {
+      printf("%*sVar '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+      }
+      printf("%*s} Var '%.*s',\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+    } break;
+    case AST_FN: {
+      printf("%*sFn {\n", indent * 2, "");
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        printf("\n");
+      }
+      printf("%*s} Fn,\n", indent * 2, "");
+    } break;
+    case AST_BLOCK: {
+      printf("%*sBlock {\n", indent * 2, "");
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        printf(",\n");
+      }
+      printf("%*s} Block,", indent * 2, "");
+    } break;
+    case AST_EXPRESSION: {
+      if (format_expressions) {
+        printf("%*sExpr(", indent * 2, "");
+      } else {
+        printf("%*s(", indent * 2, "");
+      }
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], 0, format_expressions, format_values);
+      }
+      printf(")");
+    } break;
+    case AST_OPERATION: {
+      if (format_expressions) {
+        printf("%s(", operation_string(ast[node].data.operator.type));
+      } else {
+        printf("(");
+      }
+      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
+        print_ast(ast, ast[node].children[i], 0, format_expressions, format_values);
+        if (i < mial_list_size(ast[node].children).val - 1) {
+          if (format_expressions) {
+            printf(", ");
+          } else {
+            printf(" %s ", operation_symbol(ast[node].data.operator.type));
+          }
+        }
+      }
+      printf(")");
+    } break;
+    case AST_INT_LITERAL: {
+      if (format_values) {
+        printf("Int(%ld)", ast[node].data.int_literal);
+      } else {
+        printf("%ld", ast[node].data.int_literal);
+      }
+    } break;
+    case AST_IDENTIFIER: {
+      if (format_values) {
+        printf("Id(%.*s)", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      } else {
+        printf("%.*s", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      }
+    } break;
+    case AST_FN_CALL: {
+      assert(0 && "AST_FN_CALL");
+    } break;
+    case AST_ASSIGN: {
+      assert(0 && "AST_ASSIGN");
+    } break;
+    case AST_BIN_OPERATOR: {
+      assert(0 && "AST_BIN_OPERATOR");
+    } break;
+  }
+}
+
 int64_t
-ast_node_make(struct ast_node **past, int64_t root, enum ast_node_type type, bool has_children) {
+ast_node_make(struct ast_node **past, int64_t root, enum ast_node_type type, bool has_children, const struct position *position) {
   struct ast_node *ast = *past;
   enum mial_error err = mial_list_grow(ast, 1, true);
   *past = ast;
@@ -341,7 +492,7 @@ ast_node_make(struct ast_node **past, int64_t root, enum ast_node_type type, boo
     exit(1);
   }
   int64_t index = mial_list_size(ast).val - 1;
-  if (root != -1) {
+  if (root != -1 && ast[root].children) {
     enum mial_error err = mial_list_grow(ast[root].children, 1, false);
     if (err != MIAL_ERROR_OK) {
       LOG_ERROR("Couldn't push new ast_node to root: %s\n", mial_error_string(err));
@@ -350,9 +501,6 @@ ast_node_make(struct ast_node **past, int64_t root, enum ast_node_type type, boo
     ast[root].children[mial_list_size(ast[root].children).val - 1] = index;
   }
   struct ast_node *out = &ast[index];
-  out->root = root;
-  out->self = index;
-  out->type = type;
   if (has_children) {
     struct mial_ptr children_ptr = mial_list_make(int64_t, 0);
     if (children_ptr.err != MIAL_ERROR_OK) {
@@ -361,7 +509,30 @@ ast_node_make(struct ast_node **past, int64_t root, enum ast_node_type type, boo
     }
     out->children = children_ptr.val;
   }
+  out->root = root;
+  out->self = index;
+  out->type = type;
+  if (position) out->position = *position;
   return index;
+}
+
+void
+ast_node_change_root(struct ast_node *ast, int64_t node, int64_t root) {
+  if (ast[node].root == root) return;
+  for (uint32_t i = 0; ast[node].root != -1 && i < mial_list_size(ast[ast[node].root].children).val; i++) {
+    if (ast[ast[node].root].children[i] != node) continue;
+    mial_list_remove(ast[ast[node].root].children, i);
+    break;
+  }
+  if (root != -1 && ast[root].children) {
+    enum mial_error err = mial_list_grow(ast[root].children, 1, false);
+    if (err != MIAL_ERROR_OK) {
+      LOG_ERROR("Couldn't push ast_node to root: %s\n", mial_error_string(err));
+      exit(1);
+    }
+    ast[root].children[mial_list_size(ast[root].children).val - 1] = node;
+  }
+  ast[node].root = root;
 }
 
 #define GET_NEXT_TOKEN(EXPECTED) do { \
@@ -382,6 +553,133 @@ ast_node_make(struct ast_node **past, int64_t root, enum ast_node_type type, boo
 #define GET_NEXT_TOKEN_AND_CHECK_TYPE(TOKEN_TYPE, EXPECTED) do { GET_NEXT_TOKEN(EXPECTED); CHECK_TOKEN_TYPE(TOKEN_TYPE, EXPECTED); } while (0)
 
 void
+token_to_operator(struct operator *op, enum token_type token_type) {
+  static_assert(OP_COUNT == 7);
+  switch (token_type) {
+    case TOK_ASSIGN_VAR:
+      op->precedence = PRE_ASSIGN;
+      op->type       = OP_ASSIGN;
+      break;
+    case TOK_PLUS:
+      op->precedence = PRE_PLUS;
+      op->type       = OP_PLUS;
+      break;
+    case TOK_MINUS:
+      op->precedence = PRE_MINUS;
+      op->type       = OP_MINUS;
+      break;
+    case TOK_DIV:
+      op->precedence = PRE_DIV;
+      op->type       = OP_DIV;
+      break;
+    case TOK_STAR:
+      op->precedence = PRE_MUL;
+      op->type       = OP_MUL;
+      break;
+    case TOK_POWER:
+      op->precedence = PRE_POWER;
+      op->type       = OP_POWER;
+      break;
+    default:
+      assert(0 && "unreachable");
+      break;
+  }
+}
+
+int64_t ast_expression_make(struct ast_node **past, int64_t root, const struct token *tokens, uint32_t *pi, bool has_parenthesis);
+
+void
+ast_expression_node_make(struct ast_node **past, int64_t root, const struct token *tokens, uint32_t *pi, bool has_parenthesis) {
+  struct ast_node *ast = *past;
+  uint32_t i = *pi;
+  uint32_t tokens_amount = mial_list_size(tokens).val;
+#if 0
+  print_ast(ast, 0, 0, true, false);
+  printf("\n");
+#endif
+  switch (tokens[i].type) {
+    case TOK_SEMICOLON: {
+      if (has_parenthesis) {
+        LOG_ERROR("%s:%u:%u Expected expression, but got ';'. Forgot ')'?\n", ast[root].position.file, ast[root].position.line, ast[root].position.character);
+        exit(1);
+      } else if (ast[root].type != AST_IDENTIFIER && ast[root].type != AST_INT_LITERAL && ast[root].type != AST_EXPRESSION) {
+        LOG_ERROR("%s:%u:%u Expected expression, but got ';'\n", ast[root].position.file, ast[root].position.line, ast[root].position.character);
+        exit(1);
+      }
+    } break;
+    case TOK_PAR_CLOSE: {
+      if (!has_parenthesis) {
+        LOG_ERROR("%s:%u:%u Expected expression, but got ')'\n", ast[root].position.file, ast[root].position.line, ast[root].position.character);
+        exit(1);
+      } else if (ast[root].type != AST_IDENTIFIER && ast[root].type != AST_INT_LITERAL && ast[root].type != AST_EXPRESSION) {
+        LOG_ERROR("%s:%u:%u Expected expression, but got ')'\n", ast[root].position.file, ast[root].position.line, ast[root].position.character);
+        exit(1);
+      }
+    } break;
+    case TOK_PAR_OPEN: {
+      GET_NEXT_TOKEN("')'");
+      int64_t index = ast_expression_make(&ast, root, tokens, &i, true);
+      i++;
+      ast_expression_node_make(&ast, index, tokens, &i, has_parenthesis);
+    } break;
+    case TOK_INT_LITERAL:
+    case TOK_IDENTIFIER: {
+      int64_t index;
+      if (tokens[i].type == TOK_INT_LITERAL) {
+        index = ast_node_make(&ast, root, AST_INT_LITERAL, false, &tokens[i].position);
+        ast[index].data.int_literal = strtoll(tokens[i].string.data, 0, 10);
+      } else {
+        index = ast_node_make(&ast, root, AST_IDENTIFIER, false, &tokens[i].position);
+        ast[index].data.identifier = tokens[i].string;
+      }
+      ast[index].data.operator.precedence = PRE_VALUE;
+      GET_NEXT_TOKEN(has_parenthesis ? "')'" : "';'");
+      ast_expression_node_make(&ast, index, tokens, &i, has_parenthesis);
+    } break;
+    static_assert(OP_COUNT == 7);
+    case TOK_ASSIGN_VAR:
+    case TOK_POWER:
+    case TOK_PLUS:
+    case TOK_MINUS:
+    case TOK_DIV:
+    case TOK_STAR: {
+      if (ast[root].type != AST_IDENTIFIER && ast[root].type != AST_INT_LITERAL && ast[root].type != AST_EXPRESSION) {
+        LOG_ERROR("%s:%u:%u Expected identifier, expression or literal, but got '%s'\n", ast[root].position.file, ast[root].position.line,
+            ast[root].position.character, ast_node_type_string(ast[root].type));
+        exit(1);
+      }
+      struct operator op;
+      token_to_operator(&op, tokens[i].type);
+      while (ast[ast[root].root].type == AST_OPERATION && ast[ast[root].root].data.operator.precedence >= op.precedence) {
+        root = ast[root].root;
+      }
+      int64_t index = ast_node_make(&ast, root, AST_OPERATION, true, &tokens[i].position);
+      ast[index].data.operator = op;
+      ast_node_change_root(ast, index, ast[root].root);
+      ast_node_change_root(ast, root, index);
+      GET_NEXT_TOKEN("expression");
+      ast_expression_node_make(&ast, index, tokens, &i, has_parenthesis);
+    } break;
+    default: {
+      LOG_ERROR("%s:%u:%u '%.*s' is invalid on a expression. Forgot '%c'?\n", tokens[i].position.file, tokens[i].position.line,
+          tokens[i].position.character, (int)tokens[i].string.size, tokens[i].string.data, has_parenthesis ? ')' : ';');
+        exit(1);
+    } break;
+  }
+  *pi = i;
+  *past = ast;
+}
+
+int64_t
+ast_expression_make(struct ast_node **past, int64_t root, const struct token *tokens, uint32_t *pi, bool has_parenthesis) {
+  int64_t index = ast_node_make(past, root, AST_EXPRESSION, true, &tokens[*pi].position);
+  (*past)[index].data.operator.precedence = PRE_VALUE;
+  ast_expression_node_make(past, index, tokens, pi, has_parenthesis);
+  assert(mial_list_size((*past)[index].children).val <= 1);
+  return index;
+}
+
+void
 ast_statement_make(struct ast_node **past, int64_t root, const struct token *tokens, uint32_t *pi) {
   (void)root;
   struct ast_node *ast = *past;
@@ -397,10 +695,10 @@ ast_statement_make(struct ast_node **past, int64_t root, const struct token *tok
       int64_t index;
       switch (tokens[i].type) {
         case TOK_ASSIGN_VAR: {
-          index = ast_node_make(&ast, root, AST_DEF_VAR, true);
+          index = ast_node_make(&ast, root, AST_DEF_VAR, true, &tokens[i].position);
         } break;
         case TOK_ASSIGN_CONST: {
-          index = ast_node_make(&ast, root, AST_DEF_CONST, true);
+          index = ast_node_make(&ast, root, AST_DEF_CONST, true, &tokens[i].position);
         } break;
         default: {
           LOG_ERROR("%s:%u:%u Expected ':' or '=', but got '%.*s'\n", tokens[i].position.file,
@@ -418,55 +716,23 @@ ast_statement_make(struct ast_node **past, int64_t root, const struct token *tok
       ast_statement_make(&ast, index, tokens, &i);
     } break;
     case TOK_FN: {
+      const struct position *position = &tokens[i].position;
       GET_NEXT_TOKEN_AND_CHECK_TYPE(TOK_PAR_OPEN, "'('");
       LOG_TODO("Function parameters\n");
       GET_NEXT_TOKEN_AND_CHECK_TYPE(TOK_PAR_CLOSE, "')'");
       LOG_TODO("Function return type\n");
       GET_NEXT_TOKEN_AND_CHECK_TYPE(TOK_ASSIGN_BODY, "'=>'");
       GET_NEXT_TOKEN("statement");
-      int64_t index = ast_node_make(&ast, root, AST_FN, true);
+      int64_t index = ast_node_make(&ast, root, AST_FN, true, position);
       ast_statement_make(&ast, index, tokens, &i);
     } break;
-    case TOK_INT_LITERAL: {
-      int64_t index = ast_node_make(&ast, root, AST_INT_LITERAL, false);
-      ast[index].data.int_literal = strtoll(tokens[i].string.data, 0, 10);
-      GET_NEXT_TOKEN("';'");
-      switch (tokens[i].type) {
-        case TOK_SEMICOLON: {
-        } break;
-        default: {
-          LOG_ERROR("%s:%u:%u Expected ';', but got '%.*s'\n", tokens[i].position.file,
-              tokens[i].position.line, tokens[i].position.character, (int)tokens[i].string.size, tokens[i].string.data);
-          exit(1);
-        } break;
-      }
-    } break;
-    case TOK_IDENTIFIER: {
-      uint32_t identifier = i;
-      GET_NEXT_TOKEN("';'");
-      bool func_call = false;
-      switch (tokens[i].type) {
-        case TOK_SEMICOLON: {
-        } break;
-        case TOK_PAR_OPEN: {
-          func_call = true;
-        } break;
-        default: {
-          LOG_ERROR("%s:%u:%u Expected ';', but got '%.*s'\n", tokens[i].position.file,
-              tokens[i].position.line, tokens[i].position.character, (int)tokens[i].string.size, tokens[i].string.data);
-          exit(1);
-        } break;
-      }
-      if (func_call) {
-        int64_t index = ast_node_make(&ast, root, AST_FN_CALL, true);
-        ast[index].data.identifier = tokens[identifier].string;
-        ast_statement_make(&ast, index, tokens, &i);
-      }
-      int64_t index = ast_node_make(&ast, root, AST_IDENTIFIER, false);
-      ast[index].data.identifier = tokens[identifier].string;
+    case TOK_INT_LITERAL:
+    case TOK_IDENTIFIER:
+    case TOK_PAR_OPEN: {
+      ast_expression_make(&ast, root, tokens, &i, false);
     } break;
     case TOK_CURLY_OPEN: {
-      int64_t index = ast_node_make(&ast, root, AST_BLOCK, true);
+      int64_t index = ast_node_make(&ast, root, AST_BLOCK, true, &tokens[i].position);
       for (;;) {
         GET_NEXT_TOKEN("'}'");
         if (tokens[i].type == TOK_CURLY_CLOSE) break;
@@ -483,66 +749,6 @@ ast_statement_make(struct ast_node **past, int64_t root, const struct token *tok
   *past = ast;
 }
 
-void
-print_ast(const struct ast_node *ast, int64_t node, int indent) {
-  (void)indent;
-  switch (ast[node].type) {
-    case AST_NONE: {
-      assert(0 && "AST_NONE");
-    } break;
-    case AST_MODULE: {
-      printf("%*sModule '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
-      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1);
-      }
-      printf("%*s},\n", indent * 2, "");
-    } break;
-    case AST_DEF_CONST: {
-      printf("%*sConst '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
-      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1);
-      }
-      printf("%*s},\n", indent * 2, "");
-    } break;
-    case AST_DEF_VAR: {
-      printf("%*sVar '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
-      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1);
-      }
-      printf("%*s},\n", indent * 2, "");
-    } break;
-    case AST_FN: {
-      printf("%*sFn {\n", indent * 2, "");
-      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1);
-      }
-      printf("%*s},\n", indent * 2, "");
-    } break;
-    case AST_BLOCK: {
-      printf("%*sBlock {\n", indent * 2, "");
-      for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1);
-      }
-      printf("%*s},\n", indent * 2, "");
-    } break;
-    case AST_INT_LITERAL: {
-      printf("%*sInt-literal = %ld,\n", indent * 2, "", ast[node].data.int_literal);
-    } break;
-    case AST_IDENTIFIER: {
-      printf("%*sIdentifier = %.*s,\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
-    } break;
-    case AST_FN_CALL: {
-      assert(0 && "AST_FN_CALL");
-    } break;
-    case AST_ASSIGN: {
-      assert(0 && "AST_ASSIGN");
-    } break;
-    case AST_BIN_OPERATOR: {
-      assert(0 && "AST_BIN_OPERATOR");
-    } break;
-  }
-}
-
 struct ast_node *
 parse_tokens(const struct token *tokens) {
   struct mial_ptr ast_ptr = mial_list_make(struct ast_node, 0);
@@ -551,7 +757,7 @@ parse_tokens(const struct token *tokens) {
     exit(1);
   }
   struct ast_node *ast = ast_ptr.val;
-  int64_t current_node = ast_node_make(&ast, -1, AST_MODULE, true);
+  int64_t current_node = ast_node_make(&ast, -1, AST_MODULE, true, 0);
   uint32_t tokens_amount = mial_list_size(tokens).val;
   for (uint32_t i = 0; i < tokens_amount; i++) {
     switch (ast[current_node].type) {
@@ -564,6 +770,7 @@ parse_tokens(const struct token *tokens) {
             }
             GET_NEXT_TOKEN_AND_CHECK_TYPE(TOK_IDENTIFIER, "identifier");
             ast[current_node].data.identifier = tokens[i].string;
+            ast[current_node].position = tokens[i].position;
             GET_NEXT_TOKEN_AND_CHECK_TYPE(TOK_SEMICOLON, "';'");
           } break;
           case TOK_DEF: {
@@ -583,7 +790,7 @@ parse_tokens(const struct token *tokens) {
       }
     }
   }
-  print_ast(ast, 0, 0);
+  print_ast(ast, 0, 0, true, false);
   return ast;
 }
 
