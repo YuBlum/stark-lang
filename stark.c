@@ -384,57 +384,64 @@ struct ast_node {
 };
 
 void
-print_ast(const struct ast_node *ast, int64_t node, int indent, bool format_expressions, bool format_values) {
-  (void)indent;
+print_ast(const struct ast_node *ast, int64_t node, int self_indent, int block_indent, bool format_expressions, bool format_values) {
   switch (ast[node].type) {
     case AST_NONE: {
       assert(0 && "AST_NONE");
     } break;
     case AST_MODULE: {
-      printf("%*sModule '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      printf("%*sModule '%.*s' {\n", self_indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        print_ast(ast, ast[node].children[i], block_indent + 1, block_indent + 1, format_expressions, format_values);
       }
-      printf("%*s} Module '%.*s',\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      printf("%*s} Module '%.*s',\n", block_indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
     } break;
     case AST_DEF_CONST: {
-      printf("%*sConst '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      printf("%*sConst %.*s = ", self_indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        int new_indent = block_indent + 1;
+        if (ast[ast[node].children[i]].type == AST_EXPRESSION) {
+          new_indent = 0;
+          printf(",\n");
+        }
+        print_ast(ast, ast[node].children[i], 0, new_indent, format_expressions, format_values);
       }
-      printf("%*s} Const '%.*s',\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
     } break;
     case AST_DEF_VAR: {
-      printf("%*sVar '%.*s' {\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
+      printf("%*sVar %.*s = ", self_indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        int new_indent = block_indent + 1;
+        if (ast[ast[node].children[i]].type == AST_EXPRESSION) {
+          new_indent = 0;
+          printf(",\n");
+        }
+        print_ast(ast, ast[node].children[i], 0, new_indent, format_expressions, format_values);
       }
-      printf("%*s} Var '%.*s',\n", indent * 2, "", (int)ast[node].data.identifier.size, ast[node].data.identifier.data);
     } break;
     case AST_FN: {
-      printf("%*sFn {\n", indent * 2, "");
+      printf("%*sFn {\n", self_indent * 2, "");
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        print_ast(ast, ast[node].children[i], block_indent + 1, block_indent + 1, format_expressions, format_values);
         printf("\n");
       }
-      printf("%*s} Fn,\n", indent * 2, "");
+      printf("%*s} Fn,\n", block_indent * 2, "");
     } break;
     case AST_BLOCK: {
-      printf("%*sBlock {\n", indent * 2, "");
+      printf("%*sBlock {\n", self_indent * 2, "");
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], indent + 1, format_expressions, format_values);
+        print_ast(ast, ast[node].children[i], block_indent + 1, block_indent + 1, format_expressions, format_values);
         printf(",\n");
       }
-      printf("%*s} Block,", indent * 2, "");
+      printf("%*s} Block,", block_indent * 2, "");
     } break;
     case AST_EXPRESSION: {
       if (format_expressions) {
-        printf("%*sExpr(", indent * 2, "");
+        printf("%*sExpr(", self_indent * 2, "");
       } else {
-        printf("%*s(", indent * 2, "");
+        printf("%*s(", self_indent * 2, "");
       }
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], 0, format_expressions, format_values);
+        print_ast(ast, ast[node].children[i], 0, 0, format_expressions, format_values);
       }
       printf(")");
     } break;
@@ -445,7 +452,7 @@ print_ast(const struct ast_node *ast, int64_t node, int indent, bool format_expr
         printf("(");
       }
       for (uint32_t i = 0; i < mial_list_size(ast[node].children).val; i++) {
-        print_ast(ast, ast[node].children[i], 0, format_expressions, format_values);
+        print_ast(ast, ast[node].children[i], 0, 0, format_expressions, format_values);
         if (i < mial_list_size(ast[node].children).val - 1) {
           if (format_expressions) {
             printf(", ");
@@ -594,7 +601,7 @@ ast_expression_node_make(struct ast_node **past, int64_t root, const struct toke
   uint32_t i = *pi;
   uint32_t tokens_amount = mial_list_size(tokens).val;
 #if 0
-  print_ast(ast, 0, 0, true, false);
+  print_ast(ast, 0, 0, 0, true, false);
   printf("\n");
 #endif
   switch (tokens[i].type) {
@@ -790,13 +797,103 @@ parse_tokens(const struct token *tokens) {
       }
     }
   }
-  print_ast(ast, 0, 0, true, false);
+  print_ast(ast, 0, 0, 0, true, false);
   return ast;
 }
 
 #undef GET_NEXT_TOKEN
 #undef CHECK_TOKEN_TYPE
 #undef GET_NEXT_TOKEN_AND_CHECK_TYPE
+
+enum ir_instruction_type {
+  INST_NONE = 0,
+  INST_DEF_FN,
+  INST_DEF_VAR,
+  INST_RET,
+};
+
+#define IR_INSTRUCTION_ARGS_MAX 3
+struct ir_instrunction {
+  enum ir_instruction_type type;
+  union {
+    int64_t  i[IR_INSTRUCTION_ARGS_MAX];
+    uint64_t u[IR_INSTRUCTION_ARGS_MAX];
+  } args;
+};
+
+struct type {
+  uint64_t size;
+};
+
+struct function {
+  uint64_t id;
+};
+
+struct variable {
+  uint64_t id;
+  uint64_t scope;
+  struct string type;
+};
+
+enum constant_type {
+  CONST_NONE = 0,
+  CONST_VALUE,
+  CONST_FN,
+};
+
+struct constant {
+  enum constant_type type;
+  uint64_t scope;
+  union {
+    uint64_t fn;
+    struct {
+      struct string type;
+// "TODO: add the actual values to constants"
+    } value;
+  };
+};
+
+enum scope_type {
+  SCOPE_NONE = 0,
+  SCOPE_MODULE,
+  SCOPE_BLOCK,
+};
+
+struct scope {
+  struct variable *variables;
+  struct constant *constants;
+  struct scope *sub_scopes;
+  enum scope_type type;
+};
+
+struct ir {
+  struct function *functions;
+  struct type *types;
+  struct scope module;
+};
+
+void
+ir_scope_make(struct scope *out, enum scope_type type, const struct ast_node *ast) {
+  out->type = type;
+  struct mial_ptr ptr = mial_map_make(struct );
+  out->variables = 
+};
+
+void
+generate_ir(struct ir *ir, const struct ast_node *ast) {
+  struct mial_ptr ptr = mial_list_make(struct function, 0);
+  if (ptr.err != MIAL_ERROR_OK) {
+    LOG_ERROR("Couldn't create functions list: %s\n", mial_error_string(ptr.err));
+    exit(1);
+  }
+  ir->functions = ptr.val;
+  ptr = mial_map_make(struct type, 0);
+  if (ptr.err != MIAL_ERROR_OK) {
+    LOG_ERROR("Couldn't create types map: %s\n", mial_error_string(ptr.err));
+  }
+  ir->types = ptr.val;
+  ir_scope_make();
+}
 
 int
 main(int argc, const char *argv[]) {
@@ -830,7 +927,8 @@ main(int argc, const char *argv[]) {
   get_source(&src, filepath);
   struct token *tokens = lex_source(keywords, filepath, &src);
   struct ast_node *ast = parse_tokens(tokens);
-  LOG_TODO("generate_ir(ast)\n");
+  struct ir ir;
+  generate_ir(&ir, ast);
   LOG_TODO("generate_fasm_x86_64_linux(ir)\n");
   {
     enum mial_error err;

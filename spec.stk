@@ -1,0 +1,508 @@
+# stark language showcase
+
+# this is a comment
+
+#(
+this
+is
+a
+multi-lined
+comment
+)#
+
+# strongly types language with manual memory management.
+
+# unicode is supported for identifiers
+
+# 1. functions
+# functions definitions are done as the following:
+#   def foo : fn[<<generics>>][<generic condition>](<args>) [return-type] => <expression>
+def square : fn(a = i32) i32 => a*a; # <- example
+# the return type of a function that returns nothing is 'void':
+def foo : fn() void =>;
+# but the 'void' can be omitted:
+def foo : fn() =>;
+# you'll most likely need a function with multiple statements and expressions. luckily there is the statement block, an _expression_ that encapsulate multiple statements.
+def foo : fn() => {
+  # code...
+}
+# a statement block always returns the last expression value
+def foo : fn() i32 => {
+  def x = 10;
+  x*x; # <- returns 100
+}
+# because statement blocks are just expressions you can do stuff like this:
+def foo : fn() i32 => {
+  def x = {
+    def x = 10; # variable shadowing
+    x*x;
+  };
+  x*x;
+}
+# you can also early return using the 'ret' keyword
+def foo : fn() i32 => {
+  if something => ret 5;
+  10;
+}
+# this means this code:
+def foo : fn() {
+  {
+    if something => ret;
+  }
+}
+# will only return from the inner statement block, not from the function
+# to resolve this problem you can add an n amount of '<' to the ret keyword. the amount of '<' added determines how many blocks will be returned:
+def foo : fn() {
+  {
+    {
+      if something => ret<; # this will return to the main statement block
+    }
+    {
+      if something_else => ret<<; # this will return from the main statement block
+    }
+  # ...
+}
+# this can become quite cumbersome when you have multiple nested statement blocks:
+def foo : fn() {
+    {
+      {
+        {
+          {
+            ret<<<<; # this will get back to the function
+          }
+        }
+      }
+    }
+  }
+}
+# so you can tag statement blocks using a `<tag-name>. then you can return using 'ret`<tag-name>':
+def foo : fn() {
+    def a = `someblock {
+      {
+        {
+          {
+            ret`someblock 10; # 'a' will be assigned to 10
+          }
+        }
+      }
+    }
+  }
+}
+# still it can be anoying if you just want to exist all nested blocks. for this use 'ret!', meaning 'return from all'. it'll return from the root statement block:
+def foo : fn() {
+  {
+    {
+      {
+        {
+          ret!; # <- returns from the function
+        }
+      }
+    }
+  }
+}
+def bar : fn(something = bool) i32 =>
+  if (something) => {
+    {
+      {
+        ret! 10; # return to 'if (something) => <here>'
+      }
+    }
+  } else => {
+    ret! 9; # return to 'else => <here>'
+  };
+# if you have multiple arguments with the same type in a row you only need to specify the type once:
+def foo : fn(a, b, c = i32, d, f, g = i64) # equivalent to (a = i32, b = i32, c = i32, d = i64, f = i64, g = i64)
+# functions that receives exactly two arguments can be called as an infix-call 'x foo y', were x and y are values and foo is the function.
+def add : fn(a, b = i32) => a + b;
+def foo : fn(a, b = i32) => a add b; # equivalent to add(a, b)
+# with the infix-call if one of the arguments is a pointer it'll be automatically addressed if not explicitly addressed:
+def add : fn(a = i32, b = *i32) => a + *b;
+def foo : fn(a, b = i32) => a add b; # equivalent to add(a, &b) or 'a add &b'
+# function arguments can have default values:
+def foo : fn(x = i32 10) =>;
+# you can also infer the argument type by it's default value:
+def foo : fn(x = 10) =>; # is an i32
+# a default value have to be known at compile time:
+def foo : fn(buff = alloc<u8>(10)) *u8; # compile error
+# a function can also have generic arguments:
+def add: fn<T>(a, b = T) T => a + b;
+# T is not a special name, you can name it whatever you want:
+def add: fn<add_type>(a, b = add_type) add_type => a + b;
+# you can also add compile time conditions to generic arguments
+def add_int : fn<T> T is integer (a, b = T) T => a + b;
+# calling generic arguments:
+def add: fn<T>(a, b = T) T => a + b;
+def a = add<i32>(1, 2); # explictly
+def b = add(1, 2); # inferred
+# entry point via 'main' function:
+def main : fn() =>; # code starts running here
+# functions are just values, so you can functions inside functions:
+def foo : fn() => {
+  def bar : fn ();
+  bar();
+}
+
+# 2. constants
+# constants are type checked values defined at compile time
+# constants definitions are done as the following:
+#   def FOO : [type] <value>
+def SOME_CONSTANT : 0;
+# this is because a functions is nothing more than a constant with a function literal as its value.
+# constant types are inferred, but can be explicitly defined:
+def ZERO : i32 0;
+# functions definition are similar to constant definitions because functions actually don't have names and are anonymous by default, you have to wrap them in a constant.
+# it doesn't cause problems with recursion though, the constant is defined before the function body.
+# because of this you can also define a function with its typed explicity:
+def add : fn(i32, i32) -> i32 fn(a, b = i32) i32 => a + b;
+# function types are represented as: fn(<args without names>) -> <return type>
+# this is quite cumbersome though, so it's better to just define the function the normal way
+# you can create aliases to types with constants:
+def int32_t : i32;
+# every type also has a type, and it is 'type'. so you can define a type alises as such:
+def int32_t : type i32;
+# even 'type' has the type 'type':
+def Type : type type;
+# to create distinct type aliases:
+def int : type(i32);
+int is i32; # false
+# distinct type aliases inherit all its source type families:
+def int : type(i32);
+int is number;  # true
+int is integer; # true
+int is signed;  # true
+
+# 3. variables
+# variables are pretty much like constants, with the difference that the value can be unknown at compile time
+# variables definitions are done as the following:
+#   def FOO = [mut] [type] <value>
+def x = 0;
+# type is also inferred in variables
+# variables by default are immutable, like constants, but if needed you can define them as mutable:
+def x = mut 0;
+# function arguments are variables and as such immutable by default. to make them mutable is the same deal:
+def foo : fn(x = mut i32) =>;
+# you can create a variable without a value by providing only the type:
+def x = i32;
+# this variable is still immutable though, so it can only be assigned once after it's definition.
+# because of this feature if you want to make a variable a type aliases you have to set its type explicitly:
+def int32_t = type i32;
+# variables defined with no value always defaults to 0, if it's a struct all its members are defined to 0 or its default value.
+# to make them not be zero initialized you have to specifically say it:
+def x = i32 ---;
+# you can define multiple variables of the same type on one statement:
+def a, b, c = i32;
+
+# 4. Pointers
+# You can grab a pointer to a variable with the address operator '&':
+def a = i32;
+def ptr_to_a = &a;
+def ptr_to_a_explicit: *i32 &a;
+def b = *a; # dereferencing a
+# They're immutable by default, so if you want to change the the stuff inside a pointer you need to use &mut:
+def a = mut i32;
+def ptr_to_a = &mut a;
+*ptr_to_a = 10;
+# You can't make a mutable pointer of a immutable variable
+def a = i32;
+def ptr_to_a = &mut a; # compile error
+
+# 5. Primitive types
+# integers:
+#   i8, i16, i32, i64,
+#   u8, u16, u32, u64,
+#   isize, usize
+# floats:
+#   f32, f64
+# utf8 character: char
+# built in strings:
+#   str = *char and usize
+#   cstr = *char (null terminated) and usize
+#   str and cstr layout is:
+#       array of chars
+#       size of type usize
+#   so you can pass cstr to c functions directly
+
+# 6. Type families and 'is' operator
+# a type can be part of a 'type family'.
+# type families definitions are done as the following:
+#   def foo : tf(<types-or-type-families>);
+def foo : tf(i32, f32);
+def bar : tf(integer, float);
+# you can add new types to already existing type families:
+foo <- i64;
+# you can check if a type, variable or constant is part of type family with the 'is' operator:
+def x = i32 0;
+def y = f64 0.0;
+def X : i32 0;
+def Y : f64 0.0;
+i32 is foo # true
+f32 is foo # true
+i64 is foo # true
+x   is foo # true
+X   is foo # true
+f64 is foo # false
+y   is foo # false
+Y   is foo # false
+# the 'is' operator is also used for detecting if a type, variable or constant is equal to a certain type:
+def x = i32 0;
+def y = i64 0;
+def X : i32 0;
+def Y : i64 0;
+i32 is i32 # true
+x   is i32 # true
+X   is i32 # true
+i32 is i64 # false
+y   is i32 # false
+Y   is i32 # false
+# you can use the '-' operator on a type family to exclude types temporarily:
+def x = i32 0;
+x is integer - signed; # false
+x is integer - i32; # false
+# you can create a temporary family for the '-' operation
+x is integer - tf(i32, i64); # false
+# the '+' operator also can be use to temporarily add types or families:
+x is unsigned + i32; # true
+# default families:
+# any      : all types, primitives, distinct aliases, structs
+# signed   : tf(i8, i16, i32, i64, isize)
+# unsigned : tf(u8, u16, u32, u64, usize)
+# integer  : tf(signed, unsigned)
+# float    : tf(f32, f64)
+# number   : tf(integer, float)
+
+# 7. structs
+# structs definitions are done as the following:
+#   def Foo = struct[<<generic types>>](<member variables>)
+def Foo : struct(a = i32);
+# struct field members are variables, and as such you can define them with all the methods previously mentioned:
+def Foo : struct(
+  a = i32,
+  b = 10, # default value, needs to be a constant like in functions default values
+  c = i32 9,
+  d, e = i32,
+  f = i32 ---,
+);
+# you can't change the mutability of a struct member, this is dictated by the own struct instance mutability.
+# you make a instance of a struct with the following syntax:
+def Point : struct(x, y = i32);
+def p1 = Point(1, 2);
+def p2 = Point(x = 4, y = 1); # or naming the members directly
+def p3 = Point(...); # you can also explicitly create an instance with its members default values
+def p4 = Point(1, ...) # set first member and default the rest
+def p5 = Point(y = 3, ...) # set one member by name and default the rest
+# you can also have generic types for structs:
+def Foo : struct<T>(a = T);
+# it's possible to define constants for structs:
+def Foo : struct(a, b = i32);
+def Foo.BAR : 10;
+# for generic structs you create a constant with the following syntax:
+def Foo : struct<T>(a, b = T);
+def Foo<T>.BAR : 10;
+# you can access the constants from struct instances
+def Foo : struct(a, b = i32);
+def Foo.BAR : 10;
+def x = Foo;
+def y = x.BAR # y = 10
+# it's also possible to define functions using the constants for structs:
+def Foo.bar : fn(int a, b) i32 => a + b;
+# if you try to call a struct function using an instance the instance is passed as a reference to the first argument:
+def Vec2 : struct(x, y = f32);
+def Vec2.add : fn(v0, v1 = *Vec2) Vec2 => Vec2(v0.x+v1.x, v0.y+v1.y);
+def pos = Vec2(5, 3);
+pos.add(&Vec2(1, 1)); # equivalent to: Vec2.add(&pos, &Vec2(1, 1))
+# if the first argument of the method is not a reference to a struct instance it'll generate a compile error
+# you tecnically can do this:
+def Foo : struct(bar = fn(self = *Foo) =>;);
+# but it'll not give you the method-like call that the constant option brings, it'll also waste memory.
+# there is a special overload set called 'drop'.
+# when a variable goes out of scope and drop has an overload with a pointer to the type of that variable setted, drop will be called on it:  
+def Foo : struct(buff = *void);
+def Foo.make : fn(amount = usize) Foo => Foo(alloc<u8>(amount));
+def Foo.drop : fn(self = *mut Foo) => free(Foo.buff);
+drop <- Foo.drop;
+{
+  def foo = Foo.make(10);
+} # drop(&mut foo) is called
+# the automatic drop function is the only function that can take a mutable address of an immutable variable.
+# you don't need to worry about drop beeing called on references of a type:
+def foo : fn(nums = *Foo<i32>) =>; # when this function is return it'll verify if it has 'drop' overload to a **Foo<T>, so it'll not call the *Foo<T> drop. 
+# Never call drop explicitly, double frees may occur.
+
+# 8. Overload sets
+# you can create something called an 'overload set'. an overload set can have multiple functions inside of it and it'll decide the proper call based on the arguments.
+# overload sets definitions are done as the following:
+#   def foo : ol[[(<define-patterns>)] (<args>) -> <return>](functions);
+def add_i32 : fn(a, b = i32) => a + b;
+def add_f32 : fn(a, b = f32) => a + b;
+def add : ol(add_i32, add_f32); # creates an overload set to the add_i32 and add_f32 functions
+def foo : fn() => {
+  add(1, 2); # calls add_i32
+  add(1.0, 2.0); # calls add_f32
+}
+# it's also possible to add new functions to an already defined overload set:
+def add_f64 : fn(a, b = f32) => a + b;
+def add_3_i32 : fn(a, b, c = i32) => a + b + c;
+add <- add_f64; # adds the add_f64 function to the 'add' overload set
+add <- add_3_i32; # functions don't need to have the same amount of arguments
+# if you want an overload set to only accept functions that follow an specific pattern create it like this:
+#    def foo : ol [(<define-patterns>)] (<args>) -> <return> (<functions>);
+# a pattern is an identifier followed by a type, a family type or an previous pattern:
+#    a any
+#    a *any
+#    a *mut any
+#    a any, b *a
+# the '*' is for pointers and can be of any depth
+# on the <args> and <return> section on just need to put the name of the pattern:
+def foo : ol (a any, b i32) (a, b) -> b ();
+# if you use the same pattern for args or return value, the type needs to be the same:
+def foo : ol (a any) (a, a) -> a ();
+def add_i32_i32 : fn(a, b = i32) i32 => a + b;
+def add_f32_f32 : fn(a, b = f32) f32 => a + b;
+def add_i32_f32 : fn(a = i32, b = f32) f32 => f32(a) + b;
+foo <- add_i32_i32; # it's fine
+foo <- add_f32_f32; # it's fine
+foo <- add_i32_f32; # compile error
+# to accept any value on all arguments/return you need to do:
+def foo : ol (a any, b any, c any) (a, b) -> c ();
+def add_i32_i32 : fn(a, b = i32) i32 => a + b;
+def add_f32_f32 : fn(a, b = f32) f32 => a + b;
+def add_i32_f32 : fn(a = i32, b = f32) f64 => f64(f32(a) + b);
+foo <- add_i32_i32; # it's fine
+foo <- add_f32_f32; # it's fine
+foo <- add_i32_f32; # it's fine
+# but this can become quite cumbersome if you have multiple arguments. so a special pattern exists '_' this will aceppt any arguments anywhere it's used:
+def foo : ol (_, _) -> _ ();
+def add_i32_i32 : fn(a, b = i32) i32 => a + b;
+def add_f32_f32 : fn(a, b = f32) f32 => a + b;
+def add_i32_f32 : fn(a = i32, b = f32) f64 => f64(f32(a) + b);
+foo <- add_i32_i32; # it's fine
+foo <- add_f32_f32; # it's fine
+foo <- add_i32_f32; # it's fine
+# if needed you can define '_' to follow an specific pattern:
+def foo : ol (_ integer) (_, _) -> _ ();
+def add_i32_i32 : fn(a, b = i32) i32 => a + b;
+def add_f32_f32 : fn(a, b = f32) f32 => a + b;
+def add_i32_f32 : fn(a = i32, b = f32) f64 => f64(f32(a) + b);
+foo <- add_i32_i32; # it's fine
+foo <- add_f32_f32; # it's fine
+foo <- add_i32_f32; # it's fine
+# this is called an patterned overload set
+# functions with same arguments amount and types in overload sets generate a compile error
+# you can add an overload set to an overload set:
+def add2_i32 : fn(a, b = i32) i32 => a + b;
+def add2_f32 : fn(a, b = f32) i32 => a + b;
+def add2     : ol(add2_i32, add2_f32);
+def add3_i32 : fn(a, b, c = i32) i32 => a + b + c;
+def add3_f32 : fn(a, b, c = f32) i32 => a + b + c;
+def add3     : ol(add3_i32, add3_f32);
+def add      : ol(add2, add3);
+def add4_i32 : fn(a, b, c, d = i32) i32 => a + b + c + d;
+def add4_f32 : fn(a, b, c, d = f32) i32 => a + b + c + d;
+def add4     : ol(add4_i32, add4_f32);
+add <- add4;
+# overload sets of overload sets can have different patterned overload sets inside it:
+def foo_set : ol (_, _) -> _ ();
+def bar_set : ol (_) -> _ ();
+def foobar_set : ol(foo_set, bar_set);
+# to add a generic function to an overload set you just need to pass the name:
+def add2: fn<T>(a, b = T) T => a + b;
+def add3: fn<T>(a, b, c = T) T => a + b + c;
+def add: ol(add2, add3);
+def add4: fn<T>(a, b, c, d = T) T => a + b + c + d;
+add <- add4;
+# Most of the basic math operators are in reality patterned overload sets: +, -, / and so on.
+# so you can add your custom functions to these operators:
+def Vec2 : struct(x, y = f32);
+def Vec2.add : fn(v0, v1 = *Vec2) Vec2 => Vec2(v0.x+v1.x, v0.y+v1.y);
++ <- Vec2.add;
+def pos = Vec2(5, 3);
+def a = pos + Vec2(1, 1);
+# '*' is actually an overload set of two different patterned overload sets: 'mul' (multiplication) and 'deref'(pointer dereference).
+def mul_i32 : fn(a, b = i32) i32 => a * b;
+mul <- mul_i32;
+def Box : struct<T>(ptr = *T);
+Box.make : fn<T>() Box<T> => Box(alloc<T>(1));
+Box.get  : fn<T>(self = *mut Box<T>) *mut T => self.ptr;
+Box.drop : fn<T>(self = *mut Box<T>) => free(self.ptr);
+deref <- Box.get;
+# the [] operator is an overload set of patterned overload set: aget and aset
+def List : struct<T>(size, capacity = i32, buffer = *T);
+def List.get : fn<T>(self = *List<T>, index = usize) T => self.buffer[index];
+def List.set : fn<T>(self = *mut List<T>, index = usize) *mut T => &self.buffer[index];
+aget <- List.get;
+aset <- List.set;
+def foo = List<u32>
+foo[0] = 1; # *List.set(&mut foo, 0) = 1
+def a = foo[0]; # a = List.get(&foo, 0)
+# '<-' and '->' are also overload sets:
+def List.make fn<T>() List<T> => List<T>(size = 0, capacity = 1, buffer = alloc<T>(1));
+def List.push fn<T>(self = *mut List<T>, value = T) {
+  self.size++;
+  if self.capacity <= self.size => {
+    self.capacity *= 2;
+    realloc(&self.buffer, self.capacity);
+  }
+  self[self.size - 1] = value;
+}
+<- <- List.push;
+def List.pop fn<T>(self = *mut List<T>, out = *T) => {
+  if out == null || self.size == 0 => ret!; # always use 'ret!' to return from function, good practice.
+  *out = self[self.size--];
+}
+-> <- List.pop;
+def nums = mut List.make<i32>();
+nums <- 10; # pushes 10 into nums list
+nums <- 55; # pushes 55 into nums list
+nums <- 3;  # pushes 3 into nums list
+def n = i32;
+nums -> n; # pops 3 into n
+# you can use unicode for the identifiers:
+def Vec2 : struct(x, y = f32);
+def Vec2.dot : fn(v0, v1 = *Vec2) f32 => v0.x*v1.x + x0.y*v1.y;
+d•t <- Vec2.dot
+# so something like this is possible:
+· <- Vec2.dot;
+def a = Vec2(5, 3);
+def b = Vec2(6, -4);
+def dot = a · b;
+# builtin overload sets:
+def +     : ol (_, _) -> _                          (); # plus
+def -     : ol (_, _) -> _                          (); # minus
+def /     : ol (_, _) -> _                          (); # divide
+def ^     : ol (_, _) -> _                          (); # power
+def %     : ol (_, _) -> _                          (); # mod  
+def |     : ol (_, _) -> _                          (); # bitwise or
+def ~     : ol (_, _) -> _                          (); # xor
+def <<    : ol (_, _) -> _                          (); # bit shift left
+def >>    : ol (_, _) -> _                          (); # bit shift right
+def +=    : ol (_, _) -> _                          (); # plus equals
+def -=    : ol (_, _) -> _                          (); # minus equals
+def /=    : ol (_, _) -> _                          (); # divide equals
+def ^=    : ol (_, _) -> _                          (); # power equals
+def %=    : ol (_, _) -> _                          (); # mod equals
+def |=    : ol (_, _) -> _                          (); # bitwise or equals
+def &=    : ol (_, _) -> _                          (); # bitwise and equals
+def ~=    : ol (_, _) -> _                          (); # xor equals
+def <<=   : ol (_, _) -> _                          (); # bit shift left equals
+def >>=   : ol (_, _) -> _                          (); # bit shift right equals
+def and   : ol (_, _) -> _                          (); # bitwise and
+def addr  : ol (a *any) (_) -> a                    (); # address of 
+def &     : ol (and, addr);                             # and and addr 
+def &mut  : ol (a *mut any) (_) -> a                    # mutable address of
+def <-    : ol (_, _) -> void                       (); # push 
+def ->    : ol (_, _) -> void                       (); # put
+def *=    : ol (_, _) -> _                          (); # multiply equals
+def mul   : ol (_, _) -> _                          (); # multiply
+def deref : ol (_)    -> _                          (); # dereference pointer
+def *     : ol (mul, deref);                            # mul and deref
+def aget  : (a *any) ol (a, _) -> _                 (); # access
+def aset  : (a *mut any, b *mut any) ol (a, _) -> b (); # access
+def []    : ol (aget, aset);                            # access
+def =     : (a any, b *any) ol (b, a) -> void       (); # assign
+def !     : ol (_) -> _                             (); # not
+def ==    : ol (a bool) (_, _) -> bool              (); # equals
+def !=    : ol (a bool) (_, _) -> bool              (); # not equals
+def ||    : ol (_, _) -> _                          (); # logical or
+def &&    : ol (_, _) -> _                          (); # logical and
+def drop  : ol (a *mut any) (a) -> void             (); # drop variables
+
