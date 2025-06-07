@@ -1,22 +1,12 @@
-# stark language showcase
-
-# this is a comment
-
-#(
-this
-is
-a
-multi-lined
-comment
-)#
-
-# strongly types language with manual memory management.
-
+# stark language spec v0.1.0 - Yuri Novais Ferreira
+# comments start with '#' and go up to the end of the line
+# statically typed, compiled systems programming language
+# manual memory management.
 # unicode is supported for identifiers
 
-# 1. functions
+# 1. Functions
 # functions definitions are done as the following:
-#   def foo : fn[<<generics>>][<generic condition>](<args>) [return-type] => <expression>
+#   def foo : fn[<<generics>>](<args>) [return-type] => <expression>
 def square : fn(a = i32) i32 => a*a; # <- example
 # the return type of a function that returns nothing is 'void':
 def foo : fn() void =>;
@@ -31,36 +21,56 @@ def foo : fn() i32 => {
   def x = 10;
   x*x; # <- returns 100
 }
+# so this will generate a compile error because foo is not supposed to return anything:
+def foo : fn() void => {
+  def x = 10;
+  x*x; # <- compile error
+}
+# if a expression is necessary as statement for whatever reason you can set it to the special variable '_', variable declarations are statements so the value will be dropped:
+def foo : fn() void => {
+  def x = 10;
+  _ = x*x; # <- valid
+}
+# the '_' variable is always pre-defined, you can't read from it and it'll always just ignore the assigned expression
 # because statement blocks are just expressions you can do stuff like this:
+def VALUE : 2;
 def foo : fn() i32 => {
   def x = {
     def x = 10; # variable shadowing
-    x*x;
+    def VALUE : 5; # constant shadowing
+    x*VALUE; # 10 * 5, returns 50
   };
-  x*x;
+  x*VALUE; # 50 * 2, returns 100
 }
-# you can also early return using the 'ret' keyword
+# you can also early return from a statement block using the 'ret' or 'brk' keyword
+# they're used like:
+#   ret <expr> and brk <expr>
+# the afterwords expression will be the returned expression
 def foo : fn() i32 => {
   if something => ret 5;
+  if somethingelse => brk 5;
   10;
 }
+# the difference between then is:
+# ret = return from the root block, exiting all nestead statement blocks at once
+# brk = break from the current block only.
 # this means this code:
 def foo : fn() {
   {
-    if something => ret;
+    if something => ret; # exits from the function
+    if somethingelse => brk; # exits from the block
   }
 }
-# will only return from the inner statement block, not from the function
-# to resolve this problem you can add an n amount of '<' to the ret keyword. the amount of '<' added determines how many blocks will be returned:
+# if you have multiple nested blocks and want to break more than one at a time you can append multiple '<' to the brk keyword. the amount of '<' is the amount extra blocks it'll break:
 def foo : fn() {
   {
     {
-      if something => ret<; # this will return to the main statement block
+      if something => brk<; # this will break to the main statement block
     }
     {
-      if something_else => ret<<; # this will return from the main statement block
+      if something_else => brk<<; # this will break from the main statement block, equivalent to 'ret' in this case.
     }
-  # ...
+  }
 }
 # this can become quite cumbersome when you have multiple nested statement blocks:
 def foo : fn() {
@@ -68,56 +78,48 @@ def foo : fn() {
       {
         {
           {
-            ret<<<<; # this will get back to the function
+            brk<<<<; # this will get back to the function
           }
         }
       }
     }
   }
 }
-# so you can tag statement blocks using a `<tag-name>. then you can return using 'ret`<tag-name>':
+# so you can tag statement blocks using a `<tag-name>`. then you can break using 'brk`<tag-name>`':
 def foo : fn() {
-    def a = `someblock {
+    def a = `assign_to_a` {
       {
         {
           {
-            ret`someblock 10; # 'a' will be assigned to 10
+            brk`assign_to_a` 10; # 'a' will be assigned to 10
           }
         }
       }
     }
   }
 }
-# still it can be anoying if you just want to exist all nested blocks. for this use 'ret!', meaning 'return from all'. it'll return from the root statement block:
-def foo : fn() {
-  {
-    {
-      {
-        {
-          ret!; # <- returns from the function
-        }
-      }
-    }
-  }
-}
+# the 'ret' keyword only returns from the root block, not from the function:
 def bar : fn(something = bool) i32 =>
   if (something) => {
     {
       {
-        ret! 10; # return to 'if (something) => <here>'
+        ret 10; # return to 'if (something) => <here>'
       }
     }
   } else => {
-    ret! 9; # return to 'else => <here>'
+    ret 9; # return to 'else => <here>'
   };
 # if you have multiple arguments with the same type in a row you only need to specify the type once:
 def foo : fn(a, b, c = i32, d, f, g = i64) # equivalent to (a = i32, b = i32, c = i32, d = i64, f = i64, g = i64)
-# functions that receives exactly two arguments can be called as an infix-call 'x foo y', were x and y are values and foo is the function.
+# functions that receives exactly two arguments can be called as an infix-call 'x foo y', where x and y are values and foo is the function.
 def add : fn(a, b = i32) => a + b;
 def foo : fn(a, b = i32) => a add b; # equivalent to add(a, b)
 # with the infix-call if one of the arguments is a pointer it'll be automatically addressed if not explicitly addressed:
 def add : fn(a = i32, b = *i32) => a + *b;
 def foo : fn(a, b = i32) => a add b; # equivalent to add(a, &b) or 'a add &b'
+# if a function exactly one argument you can call it without parenthesis:
+def double : fn(a = i32) i32 => a*2;
+double 2;
 # function arguments can have default values:
 def foo : fn(x = i32 10) =>;
 # you can also infer the argument type by it's default value:
@@ -129,7 +131,7 @@ def add: fn<T>(a, b = T) T => a + b;
 # T is not a special name, you can name it whatever you want:
 def add: fn<add_type>(a, b = add_type) add_type => a + b;
 # you can also add compile time conditions to generic arguments
-def add_int : fn<T> T is integer (a, b = T) T => a + b;
+def add_int : fn<T, T is integer>(a, b = T) T => a + b;
 # calling generic arguments:
 def add: fn<T>(a, b = T) T => a + b;
 def a = add<i32>(1, 2); # explictly
@@ -138,11 +140,11 @@ def b = add(1, 2); # inferred
 def main : fn() =>; # code starts running here
 # functions are just values, so you can functions inside functions:
 def foo : fn() => {
-  def bar : fn ();
+  def bar : fn () =>;
   bar();
 }
 
-# 2. constants
+# 2. Constants
 # constants are type checked values defined at compile time
 # constants definitions are done as the following:
 #   def FOO : [type] <value>
@@ -150,12 +152,8 @@ def SOME_CONSTANT : 0;
 # this is because a functions is nothing more than a constant with a function literal as its value.
 # constant types are inferred, but can be explicitly defined:
 def ZERO : i32 0;
-# functions definition are similar to constant definitions because functions actually don't have names and are anonymous by default, you have to wrap them in a constant.
-# it doesn't cause problems with recursion though, the constant is defined before the function body.
-# because of this you can also define a function with its typed explicity:
-def add : fn(i32, i32) -> i32 fn(a, b = i32) i32 => a + b;
-# function types are represented as: fn(<args without names>) -> <return type>
-# this is quite cumbersome though, so it's better to just define the function the normal way
+# constants always needs to have a value even if it's type isn't needed:
+def ZERO : i32; # creates type aliases instead of i32(0)
 # you can create aliases to types with constants:
 def int32_t : i32;
 # every type also has a type, and it is 'type'. so you can define a type alises as such:
@@ -170,8 +168,17 @@ def int : type(i32);
 int is number;  # true
 int is integer; # true
 int is signed;  # true
+# functions definition are similar to constant definitions because functions actually don't have names and are anonymous by default, you have to wrap them in a constant.
+# it doesn't cause problems with recursion though, the constant is defined before the function body.
+# function types are represented as: fn(<args without names>) -> <return type>
+# so you can do type alises of function types:
+def function_type : type fn(i32, i32) -> i32;
+# because functions are only constants you can also define a function with its typed explicity:
+def add2 : fn(i32, i32) -> i32 fn(a, b = i32) i32 => a + b; # this is a function constant with it's type defined explictly
+def add : function_type fn(a, b = i32) i32 => a + b; # using the 'function_type' constant
+# both of this ways are quite cumbersome though, so it's better to just define the function the normal way 'def foo : fn(<args>) <return-type> =>'
 
-# 3. variables
+# 3. Variables
 # variables are pretty much like constants, with the difference that the value can be unknown at compile time
 # variables definitions are done as the following:
 #   def FOO = [mut] [type] <value>
@@ -183,92 +190,144 @@ def x = mut 0;
 def foo : fn(x = mut i32) =>;
 # you can create a variable without a value by providing only the type:
 def x = i32;
+x = 10;
+x = 5; # error, can only assign once
 # this variable is still immutable though, so it can only be assigned once after it's definition.
-# because of this feature if you want to make a variable a type aliases you have to set its type explicitly:
+# because of this feature if you want to make a variable a type alias you have to set its type explicitly:
 def int32_t = type i32;
 # variables defined with no value always defaults to 0, if it's a struct all its members are defined to 0 or its default value.
-# to make them not be zero initialized you have to specifically say it:
+# to make them uninitialized with stack garbage you have to specifically say it:
 def x = i32 ---;
 # you can define multiple variables of the same type on one statement:
 def a, b, c = i32;
 
-# 4. Pointers
+# 4. Primitive types
+# signed integers: i8, i16, i32, i64
+# unsigned integer: u8, u16, u32, u64
+# pointer size variables: isize, usize
+# floats: f32, f64
+# 'char' is an utf-32 character type
+# 'str' is the builtin string type, in reality just an utf-8 encoded u8 slice
+#   string literals:
+"hello, world"; # generate a 'str'
+# 'cstr' is similar to 'str' but exclusively for c strings, it uses ASCII instead of utf-8 and it's null-terminated
+# if it was represented with a struct it would be:
+#   c strings can be passed directly to c apis
+#   c string literals:
+c"hello, world"; # generates a 'cstr'
+# to access string lengths use the len() overload set
+
+# 5. Pointers
 # You can grab a pointer to a variable with the address operator '&':
 def a = i32;
-def ptr_to_a = &a;
-def ptr_to_a_explicit: *i32 &a;
+def ptr_to_a = &a; # get address of a
+def ptr_to_a_explicit: *i32 &a; # explicit type of pointer
 def b = *a; # dereferencing a
-# They're immutable by default, so if you want to change the the stuff inside a pointer you need to use &mut:
+# They're immutable by default, so if you want to change the stuff inside a pointer you need to use &mut:
 def a = mut i32;
 def ptr_to_a = &mut a;
 *ptr_to_a = 10;
 # You can't make a mutable pointer of a immutable variable
 def a = i32;
 def ptr_to_a = &mut a; # compile error
+# The access operator '[]' can't be used on pointers, but array arithimatic is valid:
+def ptr = alloc<i32>(4);
+ptr[2] = 4; # error
+*(ptr + 2) = 4; # valid
+# *void can be used to a pointer that just points to anything, you can't do pointer arithimatic or derefence them tho:
+def ptr = *void &a;
+# null keyword:
+def foo = *void null; # points to nothing
+def foo = *void; # intializes to null
+# pointer compersion _is_ possible with pointers of the same type:
+def foo0 = *void;
+def bar0 = *u8;
+foo0 == bar0; # compile error, pointers not of the same type
+def foo1 = *void;
+def bar1 = *void;
+foo1 == bar1; # true, both are null
+# you can transmute a pointer into another pointer using the 'trans' keyword:
+def a = i32;
+def p = &a;
+def q = trans a -> *i8;
 
-# 5. Primitive types
-# integers:
-#   i8, i16, i32, i64,
-#   u8, u16, u32, u64,
-#   isize, usize
-# floats:
-#   f32, f64
-# utf8 character: char
-# built in strings:
-#   str = *char and usize
-#   cstr = *char (null terminated) and usize
-#   str and cstr layout is:
-#       array of chars
-#       size of type usize
-#   so you can pass cstr to c functions directly
-
-# 6. Type families and 'is' operator
-# a type can be part of a 'type family'.
-# type families definitions are done as the following:
-#   def foo : tf(<types-or-type-families>);
-def foo : tf(i32, f32);
-def bar : tf(integer, float);
-# you can add new types to already existing type families:
-foo <- i64;
-# you can check if a type, variable or constant is part of type family with the 'is' operator:
-def x = i32 0;
-def y = f64 0.0;
-def X : i32 0;
-def Y : f64 0.0;
-i32 is foo # true
-f32 is foo # true
-i64 is foo # true
-x   is foo # true
-X   is foo # true
-f64 is foo # false
-y   is foo # false
-Y   is foo # false
-# the 'is' operator is also used for detecting if a type, variable or constant is equal to a certain type:
-def x = i32 0;
-def y = i64 0;
-def X : i32 0;
-def Y : i64 0;
-i32 is i32 # true
-x   is i32 # true
-X   is i32 # true
-i32 is i64 # false
-y   is i32 # false
-Y   is i32 # false
-# you can use the '-' operator on a type family to exclude types temporarily:
-def x = i32 0;
-x is integer - signed; # false
-x is integer - i32; # false
-# you can create a temporary family for the '-' operation
-x is integer - tf(i32, i64); # false
-# the '+' operator also can be use to temporarily add types or families:
-x is unsigned + i32; # true
-# default families:
-# any      : all types, primitives, distinct aliases, structs
-# signed   : tf(i8, i16, i32, i64, isize)
-# unsigned : tf(u8, u16, u32, u64, usize)
-# integer  : tf(signed, unsigned)
-# float    : tf(f32, f64)
-# number   : tf(integer, float)
+# 6. Arrays and slices
+# arrays definitions are done as the following:
+#   def foo = [n]i32;
+#   'n' has to be an integer known at compile time
+def foo = [3]i32; # valid
+def bar = [some_func_that_returns_int()]i32; # compile error
+# you can create an array with it's type inferred using array literals:
+def arr = [1, 2, 3]; # array type is infered from the first element value
+# you can also define the type explicitly and leave out the length if you use literals:
+def arr = []i32 [1, 2, 3]; # length will be three
+# some other initalization examples:
+def arr0 = [3]i32 [1, 2, 3]; # array with explicit type and size
+def arr1 = [3]i32; # default every value
+def arr2 = [3]i32 ---; # unitialize memory
+# Arrays only store it's values because length is already known at compile time.
+# to get an array length use the builtin 'len' overload set:
+def arr = [5, 6, 7, 8, 9];
+def arr_len = len(arr); # arr_len = 5
+# arrays also have compile time bound checks:
+def arr = [5, 6];
+arr[2] = 7; # compile time error
+# this is a compile time value because array length _must_ be known at compile time.
+# array don't decay to pointers:
+def arr = [3]i32;
+def ptr = *i32 arr; # compile error
+# but you can take the address of an array, making it a pointer explicitly:
+def arr = [3]i32;
+def ptr = &arr; # valid, ptr is of type *i32 now
+# it's also not possible to define function arguments as arrays, therefore it's not possible to pass arrays into functions:
+def foo : fn(arr = [3]i32) =>; # compile error
+# what you can do is pass it as a pointer:
+def foo : fn(arr = *i32) =>;
+def arr = [3]i32;
+foo(&arr); # valid
+# but this becomes inconvenient because you don't have access to the access operator '[]' neither the len() overload set:
+def foo : fn(arr = *i32, arr_len = usize) i32 => *(arr + arr_len - 1);
+def arr = [3]i32;
+foo(&arr, len(arr)); # valid
+# it's also unsafe, because pointers don't do bound checks:
+def foo : fn(arr = *i32, arr_len = usize) i32 => *(arr + array_len); # it'll compile even though it's out of bound
+# that's when slices comming
+# they're in reality just a pointer and a size, but they will have access to the access operator '[]', bound checks and the len() overload set
+# to create a slice from an array use the following syntax:
+def arr = [3]i32;
+def slice0 = [..]arr;
+# the '..' is an empty range, this means all of the array is gonna be passed to the slice. you can also partially slice:
+def arr = [10]i32;
+def slice0 = [3..6]arr; # points to &arr[3] and has size 3
+def slice1 = [..]i32 [3..6]arr; # explicit type of a slice is an empty range '..', it can't be a not empty range
+# slices can be passed to functions:
+def foo : fn(arr = [..]i32) i32 => arr[len(arr) - 1];
+def arr = [1, 2, 3];
+foo(arr);
+# you can pass array literals to functions using slices
+foo([1, 2, 3]);
+# but you can't use an array literal directly on a slice:
+def arr = [...]i32 [1, 2, 3]; # compile error
+# if you want to change the values of an array from a slice you need to make a mutable slice:
+def arr = mut [3]i32;
+def slice = [..]mut arr; 
+slice[0] = 10; # valid
+# it's only possible to do a mutable slice of a mutable array
+def arr = [3]i32;
+def slice = [..]mut arr; # compile error
+# if you want a slice that can change it's pointed array you make the slice variable itself mutable:
+def arr0 = [3]i32;
+def arr1 = [5]i32;
+def slice = mut [..]i32;
+slice = [..]arr0; # valid
+slice = [..]arr1; # valid
+def arr2 = [5]i8;
+slice = [..]arr2; # compile error. the array value needs to be the same as the slice value
+# so for a mutable slice that points that haves a mutable array inside you need to:
+def arr0 = mut [3]i32;
+def arr1 = mut [4]i32;
+def slice = mut [..]mut arr0;
+slice = [..]mut arr1; # valid
 
 # 7. structs
 # structs definitions are done as the following:
@@ -282,7 +341,8 @@ def Foo : struct(
   d, e = i32,
   f = i32 ---,
 );
-# you can't change the mutability of a struct member, this is dictated by the own struct instance mutability.
+# structs have the 'type' type, so is also possible to make aliases:
+def Bar : type Foo;
 # you make a instance of a struct with the following syntax:
 def Point : struct(x, y = i32);
 def p1 = Point(1, 2);
@@ -314,21 +374,115 @@ pos.add(&Vec2(1, 1)); # equivalent to: Vec2.add(&pos, &Vec2(1, 1))
 # you tecnically can do this:
 def Foo : struct(bar = fn(self = *Foo) =>;);
 # but it'll not give you the method-like call that the constant option brings, it'll also waste memory.
-# there is a special overload set called 'drop'.
-# when a variable goes out of scope and drop has an overload with a pointer to the type of that variable setted, drop will be called on it:  
-def Foo : struct(buff = *void);
-def Foo.make : fn(amount = usize) Foo => Foo(alloc<u8>(amount));
-def Foo.drop : fn(self = *mut Foo) => free(Foo.buff);
-drop <- Foo.drop;
-{
-  def foo = Foo.make(10);
-} # drop(&mut foo) is called
-# the automatic drop function is the only function that can take a mutable address of an immutable variable.
-# you don't need to worry about drop beeing called on references of a type:
-def foo : fn(nums = *Foo<i32>) =>; # when this function is return it'll verify if it has 'drop' overload to a **Foo<T>, so it'll not call the *Foo<T> drop. 
-# Never call drop explicitly, double frees may occur.
+# all members mutabilities depends on the struct instance by default, so you can't mark a member mutable, but you can forcefully say that an field is immutable with the 'imm' keyowrd.
+def Foo : struct(ptr : imm *i32);
+# this variable can only be set normaly in the struct initialization:
+def Foo : struct(ptr : imm *i32);
+def foo = mut Foo(&a);
+foo.ptr = &b; # compile error
+# you'll probably still want to modify the field member somehow, this can only be done explicitly using the keyword 'renege':
+def Foo : struct(ptr : imm *i32);
+def foo = mut Foo(&a);
+renege foo.ptr = &b; # valid
+# the 'renege' and 'imm' keywords can only be used in struct fields. if the entire struct is immutable 'renege' will not work.
+def Foo : struct(ptr : imm *i32);
+def foo = Foo(&a);
+renege foo.ptr = &b; # compile error
 
-# 8. Overload sets
+# 8. Type families and 'is' operator
+# a type can be part of a 'type family'.
+# to define a type family you use the '+' operator on types:
+def foo : i32 + f32;
+def bar : typefam i32 + f32; # explicit type
+# it can even be used on type families to create new type families:
+def foo : integer + float + str; # typefam + typefam + type = typefam
+# it's also possible to use the '-' operator for excluding types from the new type family:
+def foo : integer - i32 - i64;
+def newsigned : integer - unsigned; # can exclude type families from type families
+# parenthesis can be used as well:
+def foo : any - (struct + string);
+# you can add new types to already existing type families:
+def foo : i32 + f32;
+foo <- i64;
+# you can even put type families inside existing type families:
+def foo : i32 + f32;
+foo <- string;
+# if you create a type family using a parent type family and later a new type is added to the parent family the type will also be added to the child family:
+def foo : integer + string;
+integer <- f32; # now foo also haves f32
+# if this is not a wanted behaviour you can create an independet type family with other type families as bases only:
+def foo : typefam(integer + string);
+integer <- f32; # foo doesn't have f32
+# with this you can have type families aliases and distinct aliases:
+def my_integer : integer; # aliases
+def my_distinct_integer : typefam(integer); # distinct
+# you can use the typefam(types|family) constructor to make families with only one type in it:
+def foo : typefam(i32); # this is good for future extensibility
+# or even no types at all:
+def foo : typefam();
+# when creating a type family you also can put overload sets that types belonging to that family will need to have overloads to using '|'
+def say_hello : ol();
+def foo : typefam() | say_hello;
+def Person : struct(age = i32, name = string);
+def Person.say_hello(self = *Person) => println("My name is ", self.name, " and i'm ", self.age, "years old");
+foo <- Person; # person overloads say_hello, so it's fine
+def Bar : struct(y = i32);
+foo <- Bar; # bar doesn't overloads say_hello, compile error
+# type families that include type families with requiring overloads will pass to require does same overloads
+# you can create anonymous type families:
+i32 + i32;
+# this is good for inserting a type into multiple type languages:
+def foo : struct(i = i32, s = str);
+integer + string <- foo;
+# and vice-versa:
+def integer32 : i32 + u32;
+def tf2 : i8  + u8 ;
+def tf3 : u16 + u16;
+integer32 <- tf2 + tf3;
+# you can check if a type, variable or constant is part of type family with the 'is' operator:
+def x = i32 0;
+def y = f64 0.0;
+def X : i32 0;
+def Y : f64 0.0;
+i32 is foo # true
+f32 is foo # true
+i64 is foo # true
+x   is foo # true
+X   is foo # true
+f64 is foo # false
+y   is foo # false
+Y   is foo # false
+# the 'is' operator is also used for detecting if a type, variable or constant is equal to a certain type:
+def x = i32 0;
+def y = i64 0;
+def X : i32 0;
+def Y : i64 0;
+i32 is i32 # true
+x   is i32 # true
+X   is i32 # true
+i32 is i64 # false
+y   is i32 # false
+Y   is i32 # false
+# 'is' is a compile time operator only
+# you can use anonymous type families with the 'is' operator:
+def x = i32 0;
+x is integer - signed; # false
+x is integer - i32; # false
+x is unsigned + i32; # true
+x is integer - (i32 + i64); # false
+# default families:
+# any       : all types, primitives, distinct aliases, structs
+# signed    : tf(i8, i16, i32, i64, isize)
+# unsigned  : tf(u8, u16, u32, u64, usize)
+# integer   : tf(signed, unsigned)
+# float     : tf(f32, f64)
+# number    : tf(integer, float)
+# string    : tf(str, cstr)
+# primitive : tf(number, string, char)
+# struct    : all structs
+# function  : all functions
+
+# 9. Overload sets
 # you can create something called an 'overload set'. an overload set can have multiple functions inside of it and it'll decide the proper call based on the arguments.
 # overload sets definitions are done as the following:
 #   def foo : ol[[(<define-patterns>)] (<args>) -> <return>](functions);
@@ -411,6 +565,8 @@ def add: ol(add2, add3);
 def add4: fn<T>(a, b, c, d = T) T => a + b + c + d;
 add <- add4;
 # Most of the basic math operators are in reality patterned overload sets: +, -, / and so on.
+# you can tecnically do:
++(1, 2);
 # so you can add your custom functions to these operators:
 def Vec2 : struct(x, y = f32);
 def Vec2.add : fn(v0, v1 = *Vec2) Vec2 => Vec2(v0.x+v1.x, v0.y+v1.y);
@@ -423,12 +579,12 @@ mul <- mul_i32;
 def Box : struct<T>(ptr = *T);
 Box.make : fn<T>() Box<T> => Box(alloc<T>(1));
 Box.get  : fn<T>(self = *mut Box<T>) *mut T => self.ptr;
-Box.drop : fn<T>(self = *mut Box<T>) => free(self.ptr);
 deref <- Box.get;
-# the [] operator is an overload set of patterned overload set: aget and aset
+# the [] operator is an special overload set of patterned overload set: aget and aset
+# it's the only overload set that can be called with the arg1[arg2] syntax.
 def List : struct<T>(size, capacity = i32, buffer = *T);
-def List.get : fn<T>(self = *List<T>, index = usize) T => self.buffer[index];
-def List.set : fn<T>(self = *mut List<T>, index = usize) *mut T => &self.buffer[index];
+def List.get : fn<T>(self = *List<T>, index = usize) T => *(self.buffer + index);
+def List.set : fn<T>(self = *mut List<T>, index = usize) *mut T => self.buffer + index;
 aget <- List.get;
 aset <- List.set;
 def foo = List<u32>
@@ -446,7 +602,7 @@ def List.push fn<T>(self = *mut List<T>, value = T) {
 }
 <- <- List.push;
 def List.pop fn<T>(self = *mut List<T>, out = *T) => {
-  if out == null || self.size == 0 => ret!; # always use 'ret!' to return from function, good practice.
+  if out == null || self.size == 0 => ret; 
   *out = self[self.size--];
 }
 -> <- List.pop;
@@ -504,5 +660,6 @@ def ==    : ol (a bool) (_, _) -> bool              (); # equals
 def !=    : ol (a bool) (_, _) -> bool              (); # not equals
 def ||    : ol (_, _) -> _                          (); # logical or
 def &&    : ol (_, _) -> _                          (); # logical and
-def drop  : ol (a *mut any) (a) -> void             (); # drop variables
+
+# 10. allocators
 
