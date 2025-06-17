@@ -39,7 +39,7 @@ def foo : fn() i32 => {
     def x = 10; # variable shadowing
     def VALUE : 5; # constant shadowing
     x*VALUE; # 10 * 5, returns 50
-  };
+  }; # need semicolon because { ... } is part of the 'def x = ...' statement. every statement or expression needs to end on a semicolon inside a block
   x*VALUE; # 50 * 2, returns 100
 }
 # you can also early return from a statement block using the 'ret' or 'brk' keyword
@@ -108,7 +108,7 @@ def bar : fn(something = bool) i32 =>
     }
   } else => {
     ret 9; # return to 'else => <here>'
-  };
+  }
 # if you have multiple arguments with the same type in a row you only need to specify the type once:
 def foo : fn(a, b, c = i32, d, f, g = i64) # equivalent to (a = i32, b = i32, c = i32, d = i64, f = i64, g = i64)
 # functions that receives exactly two arguments can be called as an infix-call 'x foo y', where x and y are values and foo is the function.
@@ -331,7 +331,7 @@ slice = [..]mut arr1; # valid
 
 # 7. structs
 # structs definitions are done as the following:
-#   def Foo = struct[<<generic types>>](<member variables>)
+#   def Foo : struct[<<generic types>>](<member variables>)
 def Foo : struct(a = i32);
 # struct field members are variables, and as such you can define them with all the methods previously mentioned:
 def Foo : struct(
@@ -374,7 +374,7 @@ pos.add(&Vec2(1, 1)); # equivalent to: Vec2.add(&pos, &Vec2(1, 1))
 # you tecnically can do this:
 def Foo : struct(bar = fn(self = *Foo) =>;);
 # but it'll not give you the method-like call that the constant option brings, it'll also waste memory.
-# all members mutabilities depends on the struct instance by default, so you can't mark a member mutable, but you can forcefully say that an field is immutable with the 'imm' keyowrd.
+# all members mutabilities depends on the struct instance by default, so you can't mark a member mutable, but you can forcefully say that an field is immutable with the 'imm' attribute.
 def Foo : struct(ptr : imm *i32);
 # this variable can only be set normaly in the struct initialization:
 def Foo : struct(ptr : imm *i32);
@@ -388,6 +388,41 @@ renege foo.ptr = &b; # valid
 def Foo : struct(ptr : imm *i32);
 def foo = Foo(&a);
 renege foo.ptr = &b; # compile error
+# if you have a struct that have other structs as members and want to access the members of the member struct directly you can use the 'take' attribute:
+def Vec2 : struct(x, y = f32);
+def Entity : struct(position = take Vec2);
+def e = Entity;
+e.x = 10.5; # access e.position.x
+e.position.y = 2.3; # direct access is still possible
+# conflicting take members need to use the direct access approach
+def Vec2 : struct(x, y = f32);
+def Vec3 : struct(x, y, z = f32);
+def Entity : struct(position = take Vec2, color = take Vec3);
+def e = Entity;
+e.x = 10.5; # compile error, conflicting takes
+# you can also use 'take' on function parameters:
+def Entity : struct(position = take Vec2);
+def Entity.move(self = take *Entity, Vec2 amount) => position += amount; # position field from entity
+def Entity.move2(self = take *Entity, Vec2 amount) => {
+  x += amount.x; # you can access 'take' members from 'take' members
+  y += amount.y;
+}
+# 'take' on variables is not possible though:
+def e = take Entity; # compile error
+# all the take rules apply for methods:
+def Foo : struct(...);
+def Foo.method(self = take *Foo) => ...;
+def Bar : struct(foo = take Foo);
+def bar = Bar;
+bar.method(); # bar.method() -> bar.foo.method() -> Foo.method(&bar.foo)
+def Bar.method2(self = take *Bar) => method(); # method() -> bar.method() -> bar.foo.method() -> Foo.method(&bar.foo)
+# 'take'ing is not the same as inheriting on other languages you can't do:
+def Foo : struct(...);
+def Bar : struct(foo = take Foo);
+def something(foo = *Foo) => ...;
+def bar = Bar;
+something(&bar); # compile error, passing a *Bar to a *Foo paremeter
+something(&bar.foo); # valid
 
 # 8. Type families and 'is' operator
 # a type can be part of a 'type family'.
