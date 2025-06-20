@@ -236,7 +236,7 @@ def foo : (num : u64 10) u64 => num; # error: constant argument with default val
 Keep in mind that non-compile-time functions with constant arguments, generates a new function every time they are used with a different constant value through out your program. This can lead to more 'bloated' executables, but the performance is not affected. 
 
 ### Compile-time functions
-If a function only takes constant arguments (or no arguments at all), it don't access external non-constant data, it's private to the current [module](#Modules) and no function pointers are taken from it through out the module; it becomes a compile-time function. I.e. it'll be run at compile-time:
+If a function only accept constant parameters and do not access external non-constant data, it's garanteed to run at compile time.
 ```
 def comp_sum : (a, b : i32) i32 => a + b;
 def x = comp_sum(12, 4); # 16 will be computed at compile-time
@@ -245,12 +245,17 @@ def x = comp_sum(12, 4); # 16 will be computed at compile-time
 It's actually possible to run any function, that don't access external non-constant data, at compile time if you pass compile-time known values as its arguments and use the `@` operator:
 ```
 def sum : (a, b = i32) i32 => a + b;
-def x = @sum(12, 4); # 16 will be computed at compile-time
+def x = @sum(12, 4); # 16 will be computed at compile-time despite 'sum' accepting variable parameters
 ```
 
-If the intended behaviour for a function is to be ran at compile-time, it's good practice to always call it using the `@` operator instead of relaying on compile-time functions. That is because breaking the compile-time function requirements is very easy.
+If a function is only run at compile-time, and no function pointers are taken from it, it'll not be included on the binary. 
 
-If a non-compile-time function is always used as such they'll be optimised out of the program and will not have memory.
+You actually can pass a variable to a function ran at compile-time if the function do not read or write to it:
+```
+def taking_a_variable_for_some_reason : (_a = u32) =>;
+def a = get_some_u32();
+@taking_a_variable_for_some_reason(a); # valid, will be run at compile-time (in this case just optimised-out)
+```
 
 You generally can't run functions at module scope, using the `@` operator you can:
 ```
@@ -263,16 +268,29 @@ def main : () => {
 }
 ```
 
-It's also possible to ensure that a function have to be a compile-time one using `@` in the function definition:
+Keep in mind that the `@` operator means "at compile time". So functions ran at module-scope will be compile-time, and as such have to follow the non-constant data access and only constant parameters rules.
+
+It's also possible to ensure that a function will always be run at compile-time one using `@` as a prefix on the function literal:
 ```
 def comp_sum : @(a, b = i32) i32 => a + b;
 def x = @comp_sum(12, 4); # 16 will be computed at compile-time
-def y = comp_sum(12, 4); # same behaviour, but the above one is best-practice
 ```
 
-Ensured compile-time function gain access to variables and return values of [compile-time-only types](#Compile-time-only-primitive-types).
+Ensured-compile-time functions always have to be called via `@`:
+```
+def comp_sum : @(a, b = i32) i32 => a + b;
+def x = @comp_sum(12, 4); # valid
+def x = comp_sum(12, 4); # invalid
+```
 
-This generates an error if any of the compile-time function rules are broken for this specific function.
+If any compile-time function rules are broken it'll generate a compile-time error.
+
+Ensured-compile-time function gain access to variables and return values of [compile-time-only types](#Compile-time-only-primitive-types):
+```
+def type_of : @(T : imp type, _ = T) type => T;
+def a = u32;
+def b = @type_of(a) 10; # valid
+```
 
 ### Generic functions
 With constant arguments you can make generic functions using the `type` type:
@@ -365,6 +383,9 @@ def ptr = &a;
 foo(ptr); # valid
 foo(&a); # valid
 ```
+
+### Variadic arguments
+Work in progress...
 
 Also works for mutable pointers:
 ```
@@ -478,6 +499,10 @@ And the function type one will accept any function.
 
 ## Constants
 Constants are immutable compile-time known values.
+
+Keep in mind that everything that is named on the language is either a [variable](#Variables) or a constant.
+
+So named functions are constants, named structs are constants, named modules are constants and so on.
 
 ### Constant definitions
 To define a constant use the `def` keyword followed by an identifier and the constant assignment operator `:`. After that a compile-time known value must be provided:
@@ -638,6 +663,11 @@ five(); # error: unhandled return value
 def _ = five(); # result is thrown away
 ```
 
+You can also name function arguments as '_', this is particularly great for values that you don't care about in callbacks:
+```
+def some_callback : (a, b = u32, _ = u32, _ = f32) u32 => a + b;
+```
+
 It's also possible to define `_` as a constant as well. This is useful for getting rid of compile-time functions return values at module scope:
 ```
 def foo : () i32 => return_some_i32();
@@ -700,7 +730,7 @@ Strings are UTF-8 enconded non-null-terminated.
 
 The layout of a string in memory (illustrated as a struct) looks like this:
 ```
-def str : struct(
+def str : (
   data        = *u8,
   length      = u32,
   bytes_count = u32,
@@ -760,78 +790,13 @@ Booleans are really simple, they just can have two states: `true` or `false`
 | i32, f32, Struct | Types directly   | type                                | The typed 'type' (i32, f32, etc) with a default value             |
 | \[1, 2, 3\]      | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
 | \[3\]21          | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
-| $code END END    | Code literal     | meta                           | meta (Compile-time only)                                     |
+| $code END END    | Code literal     | meta                                | meta (Compile-time only)                                          |
 
 __Caveats:__
 * Passing constants with `anyi` type into mismatched integers will cause an error. E.g. constant with value 1234 passed to an `u8`
 * Passing constants with `anys` type with non-ascii characters into a `cstr` will cause an error.
 * Binary, octal and hexdecimal literals can't be negative. But they can be assigned to signed integers.
 * An array type will always be based on the inferred type of the first element. E.g. `array = [1, 2, 3]` == `array = [3]inferred-type-of-array[0]`
-
-## The meta type
-A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
-
-It is a [compile-time-only type](#Compile-time-only-primitive-types) and it follow the same rules as the primitive ones.
-
-All the variants of `meta` have only one member in it: An [optional](#Options) `meta` slice named `child`.
-
-To see an in-depth list of all the types supported by an `meta` see: [Meta types](#Types-of-metas).
-
-### Meta literals
-To create a `meta` literal use the `$code` keyword followed by an identifier. When the specified identifier is reached the meta literal ends:
-```
-some_code : $code code_end
-  def add : (T : imp number, a, b = T) T => a+b;
-  def sub : (T : imp number, a, b = T) T => a-b;
-  def mul : (T : imp number, a, b = T) T => a*b;
-  def div : (T : imp number, a, b = T) T => a/b;
-code_end;
-```
-
-That way nested meta literals are possible:
-```
-some_code : $code code_end
-  some_code_inside_some_code : $code code2_end
-    def square_from_the_code_inside_the_code : (T : imp number, x = T) T => x*x;
-  code2_end
-code_end;
-```
-
-The underlying type of the generated `meta` is `meta.root`.
-
-To put all this meta-code inside your actual source code is very simple, use the `@` operator:
-```
-some_code : $code code_end def TEN : 10; code_end;
-@some_code; # now 'TEN' is defined
-```
-
-What that did was put whatever was in the `some_code` AST into the main code AST at that spot.
-
-It's possible to access values from compile-time known variables or constants inside the code literal using `$` as a prefix:
-```
-def TEN : 10;
-define_ten2 : $code code_end def TEN2 : $TEN; code_end;
-@define_ten2; # TEN2 is now defined with the value 10 on it
-```
-
-### Metaprogramming with metas
-You can return metas from ensured-compile-time functions:
-```
-def return_code : @() meta => $code end
-  def square(T : number, a = T) T => a*a;
-end;
-```
-
-If you call this function using the `@` operator the AST inside the returned `meta` will be automatically put into the main AST. This is one of the reasons of why always calling compile-time functions with `@` is good practice:
-```
-def return_code : @() meta => $code end
-  def square(T : number, a = T) T => a*a;
-end;
-@return_code(); # now the square function is defined
-```
-
-### Types of metas
-Work in progress...
 
 ## Pointers
 You can grab a pointer to a variable using the `&` operator:
@@ -847,19 +812,26 @@ The type of a pointer is represented by a `*` followed by the type that the poin
 **u8 # pointer to a pointer to an u8
 ```
 
-### Derreferencing
-To derreference a pointer use the `*` operator, similarly to C:
+### Dereferencing
+To dereference a pointer use the `*` operator, similarly to C:
 ```
 def a = 12;
 def ptr = &a;
 def b = *ptr; # b = 12
 ```
 
-Accessing a member from a pointer to a [struct](#Structs) causes an implicit derreference:
+Accessing a member from a pointer to a [struct](#Structs) causes an implicit dereference:
 ```
 def a = Some_Struct(.some_i32 = 12);
 def ptr = &a;
 def b = ptr.some_i32; # equivalent to 'def b = (*ptr).some_i32;'
+```
+
+Accessing the member from a pointer just to get it's address do not cause a dereference:
+```
+def a = Some_Struct(.some_i32 = 12);
+def ptr = &a;
+def ptr_to_some_i32 = &ptr.some_i32; # no dereference
 ```
 
 ### Pointer mutability
@@ -875,7 +847,7 @@ def b = mut 0;
 def ptr_mut = &mut a; # valid, 'b' is mutable
 ```
 
-Now assigning to derreferenced values is possible:
+Now assigning to dereferenced values is possible:
 ```
 def a = mut 0;
 def ptr = &a;
@@ -948,7 +920,7 @@ ptr = &c; # valid
 def ptr_to_some_struct = *Some_Struct ptr; # valid
 ```
 
-It's not possible to derreference void pointers.
+It's not possible to dereference void pointers.
 
 ### Pointer comparison
 Pointer comparison is possible between pointers of same tipe or void:
@@ -978,6 +950,7 @@ def a = 1.5;
 def b = a -> i32 -> u8; # 'b' is an i8 with value 1
 ```
 
+### Pointer casting
 The `->` operator can also be used on pointers:
 ```
 def a = i32;
@@ -1015,10 +988,28 @@ def a = 0xdeadbeef;
 def p1 = i0 -> *mut i32; # error
 ```
 
-Sometimes you don't want to explicitly cast to a type every time. Use the `!` operator as an automatic `-> type` cast to the expected type:
+### String casting
+Casting from `cstr` to `str` is possible:
+```
+def some_str = c"hello" -> str;
+```
+
+Casting from `str` to `cstr` is also possible:
+```
+def some_cstr = "hello" -> cstr;
+```
+
+Keep in mind that when casting `str -> cstr` non-ascii characters will be translated to `-1`:
+```
+def some_cstr = "olá" -> cstr; # 'á' will become -1 and the printing will be weird
+```
+
+### Auto casting
+Sometimes you don't want to explicitly cast to a type. Use the `!` operator as an automatic `-> type` cast to the expected type:
 ```
 def sum : (a, b = i32) i32 => a+b;
 def x = sum(12, 1.6!); # equivalent to 'sum(12, 1.6 -> i32)'
+def y = u64 1.6!;
 ```
 
 `!` operator is not valid for pointers:
@@ -1030,7 +1021,8 @@ foo(x!); # invalid
 foo(y!); # invalid
 ```
 
-Casting is not valid for [arrays](#Arrays) or [slices](#Slices)
+### Invalid casting
+Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases).
 
 ## Arrays
 Arrays are a buffer of objects of the same time with a compile-time known length.
@@ -1066,6 +1058,15 @@ You can also initialize arrays to garbage:
 def arr = [3]u64 ---;
 ```
 
+### Arrays mutability
+Because arrays actually store the data for modifying the values you just need to set the array as `mut`:
+```
+def arr0 = mut [1, 2, 3];
+arr0[0] = 4; # valid
+def arr1 = [1, 2, 3];
+arr1[0] = 4; # invalid array is mutable
+```
+
 ### builtin 'len'
 If an array length is needed you can use the builtin `len()`:
 ```
@@ -1073,19 +1074,19 @@ def arr = [1, 2, 3, 4, 5];
 def arr_len = @len(arr);
 ```
 
-`len()` is actually an [overload set](#Overload-sets), not a function. But specifically the array function overload is a compile-time one, so it's good practice to use the `@` operator.
+`len()` is actually an [overload set](#Overload-sets), not a function. But specifically the array function overload is an ensured-compile-time one, so the `@` operator is necessary.
 
-### Passing arrays as arguments
-Because array values must have known compile-time length they can't be passed directly to function variable arguments.
+### Passing arrays as parameters
+Because array values must have known compile-time length they can't be passed directly to function variable parameters.
 
-There are four ways of passing an array as arguments:
+There are four ways of passing an array as parameters:
 1. Same length arrays
 2. Pointers
 3. Constant arguments
 4. [Slices](#Slices)
 
 #### Passing same length arrays
-You technically can pass arrays to arguments if you specify the length:
+You technically can pass arrays as parameters if you specify the length:
 ```
 def foo(_arr = [3]u32) =>;
 def arr0 = [1, 2, 3];
@@ -1164,14 +1165,112 @@ foo(nums0, nums2); # invalid
 ```
 
 ## Slices
-Work in progress...
+Slices are views into arrays. They consist of a length and a pointer.
+
+To slice an an array use a [range](#Ranges-and-iterators) inside the index `[]`:
+```
+def arr = [1, 2, 3, 4, 5];
+def slice = arr[1..3]; # slice[0] == 2, slice[1] == 3, slice[2] == 4, len(slice) == 4
+```
+
+If you want to make a slice from the beginning to the end of the array use an empty range:
+```
+def arr = [1, 2, 3];
+def slice = arr[..];
+```
+
+Or just set only the starting index or only the amount:
+```
+def arr = [1, 2, 3, 4, 5, 6];
+def slice0 = arr[..3]; # 0 starting index is implied
+def slice1 = arr[2..]; # @len(arr)-2 amount is implied
+```
+
+You can use variables when slicing, but keep in mind that does have some runtime overhead for bounds checking:
+```
+def arr = [1, 2, 3, 4, 5, 6];
+def n = get_some_i32(); # supposed this returns 3 for some reason
+def slice = arr[..n]; # slice[0] == 1, slice[1] == 2, slice[2] == 3, len(slice) == 3
+```
+
+The type of a slice is `[..]<type>`, so use it to create a slice with an explicit type:
+```
+def arr = [1, 2, 3];
+def slice0 = [..]u32 arr[..];
+def slice1 = [..]i32 arr[..]; # error: can't make slice u32 array into i32 
+```
+
+With explicit typed slices you can pass the array directly:
+```
+def arr = [1, 2, 3];
+def slice0 = [..]u32 arr; # valid
+```
+
+Similarlly to pointers (because slices are basically just pointers), they can't be null and always have to point to some array:
+```
+def slice 0 = [..]i32; # invalid
+```
+
+### Passing array as slice
+This concludes the fourth method of [passing an array as a paremeter](#Passing-arrays-as-parameters). You simply just need to pass the array as an slice. This is the most preferred method for general use cases:
+```
+def foo(_arr = [..]u32) =>;
+def nums = [1, 2, 3, 4];
+foo(nums); # valid
+```
+
+### Array literals on slices
+Array literals can be sliced directly:
+```
+def slice = [..]u32 [1, 2, 3]; # makes slice from array literal
+```
+
+The slice still doesn't hold the actual data of the array. What this actually does is create an implicit array that will live through the current stack frame.
+
+This can be useful for some functions:
+```
+def sum : (xs = [..]i32) i32 => {
+  def res = 0;
+  for x in xs => res += x;
+  ret res;
+}
+def x = sum([1, 2, 3, 4]); # x = 10
+def y = sum[1, 2, 3, 4]; # using the one paremeter call convention
+```
+
+### Getting the length of a slice 
+Slices have an overload in the builtin `len()` overload set. It's not compile-time, so `@` isn't needed:
+```
+def arr = [1, 2, 3];
+def slice = arr[..];
+def amount = len(slice);
+```
+
+### Slices mutability
+The slices mutability is more akin to pointers than arrays. If you wan't to modify the values of an array through a slice you need a mutable slice using `[..]mut`:
+```
+def slice0 = [..]mut u32 [1, 2, 3];
+slice0[1] = 4; # valid
+def slice1 = [..]u32 [1, 2, 3];
+slice1[1] = 4; # invalid
+```
+
+If the slice variable itself is marked as mutable, it means you can change the slice not the values:
+```
+def slice = mut [..]u32 [1, 2, 3];
+slice = [4, 5, 6]; # valid, new array assigned to slice
+slice[1] = 4; # invalid
+```
 
 ## Structs
-Work in progress...
+Struct definition syntax:
+```
+def Some_Struct : (member0 = type0, member1 = type1, member2 = type2, ...);
+```
 
 Constant members without a value have to be at the top
 ```
-def Int_List = struct(
+def Int_List = (
   T : type is integer,
   buffer = *T,
   capacity, length = u32
@@ -1179,9 +1278,182 @@ def Int_List = struct(
 def numbers = Int_List(u32);
 ```
 
+Work in progress...
+
 ## Unions
 Tagged unions, not raw unions.
+
+Union definition syntax:
+```
+def Some_Union : type0|type1|type2|...;
+```
+
+Examples:
+```
+def Some_Struct : (a, b = f32);
+
+def Some_Union : i32|f32|u64;
+def Some_Invalid_Union : i32|i32|f32|u64; # error: repeating type
+def Some_Complex_Union : i32|Some_Struct|Some_Union_Defined_Struct(x, y = i32)|Some_Union_Defined_Tuple(i32, i32);
+def Some_Invalid_Complex_Union : i32|Some_Struct|(x, y = i32)|(i32, i32); # error: structs and tuples defined on unions must have names
+def Some_Union_With_Unions : i32|Some_Union_Defined_Union(u32|f64);
+def Some_Invalid_Union_With_Unions : i32|(u32|f64); # error: unions defined on unions also must have names
+def Some_Enum_Like_Union : Value0()|Value1()|Value2(); # empty structs are valid only on unions for enum-like behaviour
+
+def something = Some_Complex_Union.Some_Union_Defined_Struct(10, 20); # something is of Some_Complex_Union type tagged as Some_Union_Defined_Struct
+def some_struct = Some_Union(Some_Struct(1.5, 2.3));
+def some_struct2 = Some_Union.Some_Struct(1.5, 2.3); # same as previous definition, but using the sub type of an union directly
+def some_union = Some_Union(0); # some_union is of Some_Union type tagged as i32 (first match)
+def some_union = Some_Union.u64(0); # some_union is of Some_Union type tagged as u64 (explicit)
+def some_enum = Some_Enum_Like_Union.Value0(); # some_enum is of type Some_Enum_Like_Union tagged as Value0
+```
+
+To get the amount of tags in a union use the bultin `len()`. Like array lengths union tags amount are known at compile time:
+```
+def Week : Monday()|Tuesday()|wednesday()|Thursday()|Friday();
+def week_amount = @len(Week); # week_amount 5
+```
+
+TODO: union for indexing arrays
+
 Work in progress...
+
+## The meta type
+A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
+
+It is a [compile-time-only type](#Compile-time-only-primitive-types) and it follow the same rules as the primitive ones.
+
+All the variants of `meta` have only one member in it: An [optional](#Options) `meta` slice named `child`.
+
+To see an in-depth list of all the types supported by an `meta` see: [Meta types](#Types-of-metas).
+
+### Meta literals
+To create a `meta` literal use the `$code` keyword followed by an identifier. When the specified identifier is reached the meta literal ends:
+```
+some_code : $code code_end
+  def add : (T : imp number, a, b = T) T => a+b;
+  def sub : (T : imp number, a, b = T) T => a-b;
+  def mul : (T : imp number, a, b = T) T => a*b;
+  def div : (T : imp number, a, b = T) T => a/b;
+code_end;
+```
+
+That way nested meta literals are possible:
+```
+some_code : $code code_end
+  some_code_inside_some_code : $code code2_end
+    def square_from_the_code_inside_the_code : (T : imp number, x = T) T => x*x;
+  code2_end
+code_end;
+```
+
+The underlying type of the generated `meta` is `meta.root`.
+
+To put all this meta-code inside your actual source code is very simple, use the `@` operator:
+```
+some_code : $code code_end def TEN : 10; code_end;
+@some_code; # now 'TEN' is defined
+```
+
+What that did was put whatever was in the `some_code` AST into the main code AST at that spot.
+
+It's possible to access values from compile-time known variables or constants inside the code literal using `$` as a prefix:
+```
+def TEN : 10;
+define_ten2 : $code code_end def TEN2 : $TEN; code_end;
+@define_ten2; # TEN2 is now defined with the value 10 on it
+```
+
+### meta.iden and meta.expr
+The `meta.iden` sub-struct from `meta` can accept an identifier directly:
+```
+an_actual_identifier : meta.iden some_random_identifier;
+```
+
+Then it can be directly injected into code:
+```
+def an_actual_identifier : meta.iden some_random_identifier;
+def @an_actual_identifier : 20; # 'some_random_identifier' is defined here with the value of 20
+```
+
+The `meta.expr`, similarlly to `meta.iden`, can accept expressions directly on it's definition:
+```
+def an_actual_expression : meta.expr 3 + 4;
+def something : () i32 => @an_actual_expression; # 'something' returns 7
+```
+
+### Metaprogramming with metas
+You can return metas from ensured-compile-time functions:
+```
+def return_code : @() meta => $code end
+  def square(T : number, a = T) T => a*a;
+end;
+```
+
+Using the `@` operator on a function that returns a `meta` will not only call the function but inject the `meta` AST into the main AST:
+```
+def gen_square_fn : @() meta => $code end
+  def square(T : number, a = T) T => a*a;
+end;
+@gen_square_fn(); # now the square function is defined
+```
+
+The `meta.iden` and `meta.expr` also can be passed as constant arguments, this is useful for putting their values directly on code literals:
+```
+def gen_fn_with_arg_a : @(fn_name : meta.iden, fn_expr : meta.expr) meta => $code end
+  def $fn_name(T : number, a = T) T => $fn_expr;
+end;
+@gen_fn_with_arg_a(square, a * a);
+```
+
+### Types of metas
+Work in progress...
+
+## The anyrt type
+`anyrt` is another bultin union. It stands for 'any runtime', and as it implies, you can pass any value to it at runtime and it'll hold type information plus a immutable pointer to the data:
+```
+def a = 10;
+def b = "hello";
+def x = anyrt a; # valid
+def y = anyrt b; # valid
+```
+
+You can pass values directly, the data for storing the value will be allocated on the current stack frame:
+```
+def x = anyrt 10; # valid
+```
+
+Similarlly to [pointers](#Pointer-definition), `anyrt` variables can't be initialized without any values:
+```
+def x = anyrt; # error: no value provided
+```
+
+The difference is that `anyrt` cannot be an [option](#Options):
+```
+def x = ?anyrt; # error: optinal anyrt
+```
+
+`anyrt` variables also can't be mutable:
+```
+def x = mut anyrt 0; # error: mutable anyrt
+```
+
+### Getting the data from an anyrt
+Every `anyrt` sub-type have `.data` member field, it's a pointer to the correct type:
+```
+def x = anyrt 10;
+def x_val = *x.data; # x_val is now defined as an i32 with value 10
+def x_wrong_val = f32 *x.data; # error: passing wrong type
+```
+
+### Anyrt sub-types
+`anyrt` is actually specific to every Stark project. It's start empty with no sub-types, and at compile-time it'll add correct sub-types as necessary.
+
+Every sub-type start with an underscore, so an `i32` sub-type will be `_i32`, a `str` will be `_str`.
+
+Named structs, unions, tuples and so on will have a proper name in the sub-type. For example, an struct named `Some_Struct` will have an `anyrt` sub-type of `_Some_Struct`.
+
+Unnamed custom types will have the type 
 
 ## Control flow (if, else and loops)
 Work in progress...
@@ -1190,12 +1462,20 @@ Work in progress...
 ### Compile-time control flows
 Work in progress...
 
+## Ranges and iterators
+Work in progress...
+
 ## Options
 Work in progress...
 ### 'or', 'or_brk' and 'or_ret' keywords on options
 Work in progress...
 
 ## Tuples and error handling
+Tuple definition syntax:
+```
+def Some_Union : (type0, type1, type2, ...);
+```
+
 Work in progress...
 ### 'or', 'or_brk' and 'or_ret' keywords on tuples
 Work in progress...
@@ -1221,11 +1501,9 @@ Work in progress...
 | 2          | -        | Unary minus                                | Right to Left |
 | 2          | !        | Logical not                                | Right to Left |
 | 2          | ~        | Bitwise not                                | Right to Left |
-| 2          | *        | Pointer derreferencing                     | Right to Left |
+| 2          | *        | Pointer dereferencing                      | Right to Left |
 | 2          | &        | Address of                                 | Right to Left |
 | 2          | &mut     | Mutable address of                         | Right to Left |
-| 2          | sizeof   | Size of type                               | Right to Left |
-| 2          | alignof  | Alignment of type                          | Right to Left |
 | 2          | ->       | Safe cast between types                    | Left to Right |
 | 2          | !        | Safe automatic cast between types          | Left to Right |
 | 3          | *        | Multiplication                             | Left to Right |
