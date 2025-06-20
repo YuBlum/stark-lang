@@ -13,7 +13,7 @@ def main : () => io.println("Hello, World!");
 
 ## Functions
 ### Function definition and calling conventions
-Function are defined using the `def` keyword, followed by an identifier, followed by the constant assignment operator `:`, then the argument list `(arg0 = type0, arg1 = type1, ...)`, next the return type, followed by the body assignment operator `=>` and finally an expression, that expression is the function body:
+Functions are defined using the `def` keyword, followed by an identifier, followed by the constant assignment operator `:`, then the argument list `(arg0 = type0, arg1 = type1, ...)`, next the return type, followed by the body assignment operator `=>` and finally an expression, that expression is the function body:
 ```
 def func_name : (arg0 = type0, arg1 = type1, ...) return_type => func_body_expr;
 ```
@@ -41,13 +41,13 @@ def foo : (_a = i32, _b = i32) =>;
 foo(10, 12);
 ```
 
-But if it takes exactly one argument the parenthesis are optional:
+But if it takes exactly one parameter the parenthesis are optional:
 ```
 def foo : (_x = i32) =>;
 foo 10;
 ```
 
-And if it takes exactly two arguments it can be called as an 'infix call' `x foo y`, where `x` and `y` are arguments and `foo` is the function:
+And if it takes exactly two parameters it can be called as an 'infix call' `x foo y`, where `x` and `y` are parameters and `foo` is the function:
 ```
 def foo : (_a = i32, _b = i32) =>;
 10 foo 12;
@@ -81,7 +81,7 @@ def foo : () void =>;
 def foo : () =>;
 ```
 
-### Expresion blocks
+### Expression blocks
 For functions with more then one expression use an expression block.
 ```
 def foo : () => {
@@ -209,7 +209,7 @@ Functions can also have constant arguments:
 def foo : (num : u64 0) u64 => num;
 ```
 
-That means that you can only pass constant values for those arguments:
+That means that you can only pass constant parameters to those arguments:
 ```
 def foo : (num : u64 0) u64 => num;
 def x = foo(10); # valid
@@ -226,7 +226,12 @@ Constant arguments are the only place where you don't need to specify the consta
 ```
 def foo : (num : u64) u64 => num;
 ```
-So the code above doesn't actually make a type aliases, instead it makes an i64 constant.
+So the code above doesn't actually make a type aliases, instead it makes an u64 constant.
+
+Actually constant arguments _can't_ have a default constant value:
+```
+def foo : (num : u64 10) u64 => num; # error: constant argument with default value
+```
 
 Keep in mind that non-compile-time functions with constant arguments, generates a new function every time they are used with a different constant value through out your program. This can lead to more 'bloated' executables, but the performance is not affected. 
 
@@ -265,6 +270,8 @@ def x = @comp_sum(12, 4); # 16 will be computed at compile-time
 def y = comp_sum(12, 4); # same behaviour, but the above one is best-practice
 ```
 
+Ensured compile-time function gain access to variables and return values of [compile-time-only types](#Compile-time-only-primitive-types).
+
 This generates an error if any of the compile-time function rules are broken for this specific function.
 
 ### Generic functions
@@ -278,25 +285,92 @@ It's also possible to use the `is` (see more on [the type families section](#Typ
 def sum : (T : type is number, a, b = T) T => a + b;
 ```
 
+Or just family types directly:
+```
+def sum : (T : number, a, b = T) T => a + b;
+```
+
+### Unordered parameters
+Another way to call a function is with directly naming the argument to which you want to pass the parameter:
+```
+def foo : (a, b, c = i32) i32 => a+b+c;
+def _ = foo(.c = 10, .a = 4, .b = -15);
+```
+
+Works even for constant arguments:
+```
+def foo : (T : type, a, b, c = T) T => a+b+c;
+def _ = foo(.c = 10, .a = 4, .b = -15, .T : f32); # constant parameters use ':' instead of '='
+```
+
+This way you can leave the default arguments untouched:
+```
+def foo : (a = i32, b = i32 10, c = i32) i32 => a+b+c;
+def _ = foo(9, .c = 11);
+```
+
+With that in mind if an argument has a default that parameter is optional:
+```
+def foo : (a, b = i32, c = i32 10) i32 => a+b+c;
+def _ = foo(9, 11);
+```
+
+This calling convention is the reason why function types have their arguments names in it.
+
+### Implicit constant parameters
+If a constant argument is used in some way by other arguments you can add the `imp` attibute to it. This will make that argument be implicitly defined based on it's first use:
+```
+def add : (T : imp number, a, b = T) T => a+b;
+def x = add(1, 2);
+def y = add(1.6, 2.1);
+def y = add(1.6, 2); # error: an i32 is being passed to 'b' and expected a f32
+```
+
+You can still set the value of the constant parameter explictly using the unordered parameter function call:
+```
+def add : (T : imp number, a, b = T) T => a+b;
+def x = add(.T : u64, 1, 2);
+```
+
 ### Immutable arguments are references
-Immutable arguments that have a value bigger than 8 bytes are passed as references (implicit pointer). That way copies are not made.
+Immutable arguments that have a value bigger than a register size (usually 8 or 4 bytes) are passed as references (implicit pointer). That way copies are not made.
 
 So you don't need to explicitly pass immutable pointers around for big structs, like you would do it in C. It is actually more performant if you don't use immutable pointers to just pass values because inlining becomes a possibility:
 ```
-def foo(x = *Big_Struct) Something => x.something;
-def bar(x = Big_Struct) Something => x.something;
+def foo : (x = *Big_Struct) Something => x.something;
+def bar : (x = Big_Struct) Something => x.something;
 def big = Big_Struct;
-foo(&big)
-bar(big) # performance for this is the same as bar or better if inlined
+def _ = foo(&big);
+def _ = bar(big); # performance for this is the same as 'foo' or better if inlined
 ```
 
-You can't take the address of or edit member values of arguments passed by reference. If you want that functionality you have to explicitly tell the compiler and the user using the reference type:
+It is not possible to take the address of immutable arguments because they actually can be references and that could be dangerous:
 ```
-def foo(x = Big_Struct) => x.something = something_else(); # invalid
-def bar(x = &Big_Struct) => x.something = something_else(); # valid
-def big = Big_Struct;
-foo(big) # passed by implicit reference
-bar(big) # passed by reference
+def foo : (x = Big_Struct) => do_something(&x); # error: can't take address of immutable variable
+```
+
+### Implicit address on argument
+If the convenience of not taking the address is desired for pointer arguments is desired (for instance, [operator overloading](#Operators-are-overload-sets)), you can add the `&` attribute to a pointer argument. This signals that an implicit address will be taken:
+```
+def foo : (_x = &*Big_Struct) =>;
+def a = Big_Struct;
+foo(a); # equivalent to foo(&a)
+```
+
+Because these arguments are just pointers, pointers can still be directly passed:
+```
+def foo : (_x = &*Big_Struct) =>;
+def a = Big_Struct;
+def ptr = &a;
+foo(ptr); # valid
+foo(&a); # valid
+```
+
+Also works for mutable pointers:
+```
+def foo : (x = &*mut Big_Struct) => x.something = get_something();
+def a = mut Big_Struct;
+foo(a); # valid
 ```
 
 ### Functions are just values
@@ -338,7 +412,10 @@ def foo : () => {
 }
 ```
 
-Function literals assigned to constants are considered 'named functions'. This is basicaly taking adventage of [constant scoping](#Constant-scoping) and not actually a seperate feature. I.e. recursion is possible. 
+Function literals assigned to constants are considered 'named functions'. This is basicaly taking adventage of [constant scoping](#Constant-scoping) and not actually a seperate feature. I.e. recursion is possible:
+```
+def foo : (x = i32) => foo(x + 1); # completely valid
+```
 
 ### Function pointers
 Variables can't have the function types, only constants. For variables use function pointers instead.
@@ -585,9 +662,9 @@ it works differently than [constant scoping](#Constant-scoping). A variable cann
 Exactly the same as [constant shadowing](Constant-shadowing).
 
 ## Primitive types
-There are two types of primitive types, the ones that can be assigned to variables and the ones that are constant assignable only.
+There are two types of primitive types, the ones that can be assigned to runtime variables and the ones that dont.
 
-### Normal primitive types
+### Normal runtime primitive types
 - __Integers:__
   - _Signed:_ `i8`, `i16`, `i32`, `i64`
   - _Unsigned:_ `u8`, `u16`, `u32`, `u64`
@@ -601,12 +678,14 @@ There are two types of primitive types, the ones that can be assigned to variabl
   - _Regular string (generally 16 or 12 bytes):_ `str`
   - _C string (generally 16 or 8 bytes):_ `cstr`
 
-### Constant-only primitive types
-None of the constant-only primitives have size
+### Compile-time-only primitive types
+None of the compile-time-only primitives have a size
 - __Any integer:__ `anyi`
 - __Any floating point:__ `anyf`
 - __Any string:__ `anys`
 - __Variable type:__ `type`
+
+This types are valid to use in constants and [ensured-compile-time functions](#Compile-time-functions).
 
 ### Signed integers
 Signed integers are represented using [two's complement](https://en.wikipedia.org/wiki/Two%27s_complement).
@@ -680,12 +759,79 @@ Booleans are really simple, they just can have two states: `true` or `false`
 | c"text"          | C string literal | cstr                                | cstr                                                              |
 | i32, f32, Struct | Types directly   | type                                | The typed 'type' (i32, f32, etc) with a default value             |
 | \[1, 2, 3\]      | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
+| \[3\]21          | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
+| $code END END    | Code literal     | meta                           | meta (Compile-time only)                                     |
 
 __Caveats:__
 * Passing constants with `anyi` type into mismatched integers will cause an error. E.g. constant with value 1234 passed to an `u8`
 * Passing constants with `anys` type with non-ascii characters into a `cstr` will cause an error.
 * Binary, octal and hexdecimal literals can't be negative. But they can be assigned to signed integers.
 * An array type will always be based on the inferred type of the first element. E.g. `array = [1, 2, 3]` == `array = [3]inferred-type-of-array[0]`
+
+## The meta type
+A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
+
+It is a [compile-time-only type](#Compile-time-only-primitive-types) and it follow the same rules as the primitive ones.
+
+All the variants of `meta` have only one member in it: An [optional](#Options) `meta` slice named `child`.
+
+To see an in-depth list of all the types supported by an `meta` see: [Meta types](#Types-of-metas).
+
+### Meta literals
+To create a `meta` literal use the `$code` keyword followed by an identifier. When the specified identifier is reached the meta literal ends:
+```
+some_code : $code code_end
+  def add : (T : imp number, a, b = T) T => a+b;
+  def sub : (T : imp number, a, b = T) T => a-b;
+  def mul : (T : imp number, a, b = T) T => a*b;
+  def div : (T : imp number, a, b = T) T => a/b;
+code_end;
+```
+
+That way nested meta literals are possible:
+```
+some_code : $code code_end
+  some_code_inside_some_code : $code code2_end
+    def square_from_the_code_inside_the_code : (T : imp number, x = T) T => x*x;
+  code2_end
+code_end;
+```
+
+The underlying type of the generated `meta` is `meta.root`.
+
+To put all this meta-code inside your actual source code is very simple, use the `@` operator:
+```
+some_code : $code code_end def TEN : 10; code_end;
+@some_code; # now 'TEN' is defined
+```
+
+What that did was put whatever was in the `some_code` AST into the main code AST at that spot.
+
+It's possible to access values from compile-time known variables or constants inside the code literal using `$` as a prefix:
+```
+def TEN : 10;
+define_ten2 : $code code_end def TEN2 : $TEN; code_end;
+@define_ten2; # TEN2 is now defined with the value 10 on it
+```
+
+### Metaprogramming with metas
+You can return metas from ensured-compile-time functions:
+```
+def return_code : @() meta => $code end
+  def square(T : number, a = T) T => a*a;
+end;
+```
+
+If you call this function using the `@` operator the AST inside the returned `meta` will be automatically put into the main AST. This is one of the reasons of why always calling compile-time functions with `@` is good practice:
+```
+def return_code : @() meta => $code end
+  def square(T : number, a = T) T => a*a;
+end;
+@return_code(); # now the square function is defined
+```
+
+### Types of metas
+Work in progress...
 
 ## Pointers
 You can grab a pointer to a variable using the `&` operator:
@@ -884,6 +1030,8 @@ foo(x!); # invalid
 foo(y!); # invalid
 ```
 
+Casting is not valid for [arrays](#Arrays) or [slices](#Slices)
+
 ## Arrays
 Arrays are a buffer of objects of the same time with a compile-time known length.
 
@@ -900,10 +1048,10 @@ def arr = [1, 2, 3]; # arr[0] == 1, arr[1] == 2, arr[2] == 3. Length of the arra
 def arr_explicit = [3]i32 [4, 5, 6]; # same thing, but the array type is explicit
 ```
 
-Another way of writing an array literal is `[amount; default-value]`:
+Another way of writing an array literal is `[amount]default-value`:
 ```
-def arr = [3; 1.5]; # arr[0] == 1.5, arr[1] == 1.5, arr[2] == 1.5. Length of the array is 3
-def arr = [3]f32 [3; 1.5]; # same thing, but the array type is explicit
+def arr = [3]1.5; # arr[0] == 1.5, arr[1] == 1.5, arr[2] == 1.5. Length of the array is 3
+def arr = [3]f32 [3]1.5; # same thing, but the array type is explicit
 ```
 
 You can also define an array of implicit length based on the literal:
@@ -928,7 +1076,92 @@ def arr_len = @len(arr);
 `len()` is actually an [overload set](#Overload-sets), not a function. But specifically the array function overload is a compile-time one, so it's good practice to use the `@` operator.
 
 ### Passing arrays as arguments
-Work in progress...
+Because array values must have known compile-time length they can't be passed directly to function variable arguments.
+
+There are four ways of passing an array as arguments:
+1. Same length arrays
+2. Pointers
+3. Constant arguments
+4. [Slices](#Slices)
+
+#### Passing same length arrays
+You technically can pass arrays to arguments if you specify the length:
+```
+def foo(_arr = [3]u32) =>;
+def arr0 = [1, 2, 3];
+def arr1 = [1, 2, 3, 4];
+foo(arr0); # valid
+foo(arr1); # error: expected [3]u32 found [4]u32
+```
+
+Following the [passing as reference rule](#Immutable-arguments-are-references) the array will not be copied.
+
+To avoid several performance and semantic problems, arrays passed directly can't be mutable:
+```
+def foo(_arr = mut [3]u32) =>; # error: array argument can't be mutable
+```
+
+Insuring that arrays of the same length as passed to arguments can be useful sometimes. But most of the time a function wants to accept any array length, so this method isn't good for that.
+
+#### Passing arrays as pointers
+Arrays do not decay into pointers like in C, so this is invalid:
+```
+def foo(_arr = *u32) =>;
+def nums = [1, 2, 3, 4];
+foo(nums); # error: expected *u32 found [3]u32
+```
+
+Taking the address of just the array will give you a pointer to the array type:
+```
+def foo(_arr = *u32) =>;
+def nums = [1, 2, 3, 4];
+foo(&nums); # error: expected *u32 found *[3]u32
+```
+
+You could use casting to resolve this problem:
+```
+def foo(_arr = *u32) =>;
+def nums = [1, 2, 3, 4];
+foo(&nums -> *u32); # valid
+```
+
+Or preferably take the address of the first element:
+```
+def foo(_arr = *u32) =>;
+def nums = [1, 2, 3, 4];
+foo(&nums[0]); # valid
+```
+
+The problem with passing arrays as pointers is the lost of the array length.
+
+To overcome this you could pass an extra argument to the function:
+```
+def foo(_arr = *u32, _arr_len = usize) =>;
+def nums = [1, 2, 3, 4];
+foo(&nums[0], @len(nums)); # valid
+```
+
+It'll work, but this is extremely unsafe and cumbersome. Therefore, not recommended
+
+#### Passing array to constant arguments
+You can pass arrays of any length to constant arguments:
+```
+def foo(_arr : []u32) =>;
+def nums = [1, 2, 3, 4];
+foo(nums); # valid
+```
+
+This is better than passing by pointer. The problem is that for every new array length that is passed a new version of the function is created. It's a viable option though, the performance will actually be great with compile-time catches on bound checks and compile-time known length.
+
+You can also enforce same length on different array parameters using the [imp](#Implicit-constant-parameters) attribute:
+```
+def foo(N : imp usize, _arr0 : [N]u32, _arr1 : [N]u32) =>;
+def nums0 = [1, 2];
+def nums1 = [1, 2];
+def nums2 = [1, 2, 3];
+foo(nums0, nums1); # valid
+foo(nums0, nums2); # invalid
+```
 
 ## Slices
 Work in progress...
@@ -945,6 +1178,10 @@ def Int_List = struct(
 );
 def numbers = Int_List(u32);
 ```
+
+## Unions
+Tagged unions, not raw unions.
+Work in progress...
 
 ## Control flow (if, else and loops)
 Work in progress...
@@ -1025,6 +1262,9 @@ Work in progress...
 | 15         | ,        | Comma                                      | Right to Left |
 
 ## Overload sets
+NOTE: unordered parameters and default values can be a real pain here
+Work in progress...
+### Operators are overload sets
 Work in progress...
 
 ## Modules, build system and linking
