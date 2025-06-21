@@ -28,7 +28,7 @@ abc__0123 # valid identifier
 0a # invalid identifier
 ```
 
-[The `_` identifier is reserved](#Unused-variables-and-the-'_'-identifier)
+[The `_` identifier is reserved](#Unused-variables-and-the-_-identifier)
 
 A basic function that returns a sum of two numbers would be defined as:
 ```
@@ -87,7 +87,7 @@ For functions with more then one expression use an expression block.
 def foo : () => {
   expr0;
   expr1;
-}
+};
 ```
 
 If an early break from the expression block is required use the `brk` keyword:
@@ -97,7 +97,7 @@ def do_more_stuff : () => {
   do_stuff();
   brk;
   do_stuff(); # will not be executed
-}
+};
 ```
 
 By default expression blocks do not return any value. Use the `brk` keyword followed by one expression to break from the expression block with a return value:
@@ -106,15 +106,15 @@ def do_stuff_and_sum : (x = i32, y = i32) i32 => {
   do_stuff();
   do_stuff();
   brk x + y;
-}
+};
 ```
 
 Because expression blocks are also just expressions they can be nested:
 ```
 def foo : () => {
-  { }
-  { }
-}
+  { };
+  { };
+};
 ```
 
 ### Break and return from expression blocks
@@ -124,9 +124,9 @@ def foo : () => {
   {
     brk;
     do_stuff(); # will not be executed
-  }
+  };
   do_stuff(); # will be executed
-}
+};
 ```
 
 If you want to return from all nested expression blocks at once use the `ret` keyword:
@@ -135,9 +135,9 @@ def foo : () => {
   {
     ret;
     do_stuff(); # will not be executed
-  }
+  };
   do_stuff(); # will not be executed
-}
+};
 ```
 
 And of course, `ret` also can have an expression as a return value:
@@ -146,9 +146,9 @@ def five : () i32 => {
   {
     ret 5; # 5 is returned from the function
     do_stuff(); # will not be executed
-  }
+  };
   do_stuff(); # will not be executed
-}
+};
 ```
 
 The `brk` statement can be nested:
@@ -158,11 +158,11 @@ def foo : () => {
     {
       brk brk;
       do_stuff(); # not executed
-    }
+    };
     do_something(); # not executed
-  }
+  };
   do_something_else(); # executed
-}
+};
 ```
 
 It can be nested how many times you want infact:
@@ -174,15 +174,15 @@ def foo : () => {
         {
           brk brk brk brk;
           do_stuff(); # not executed
-        }
+        };
         do_something(); # not executed
-      }
+      };
       do_something_else(); # not executed
-    }
+    };
     do_something_extra(); # not executed;
-  }
+  };
   do_real_work(); # executed;
-}
+};
 ```
 
 But this is not recomended, try to keep your functions without much nested expression blocks.
@@ -264,8 +264,7 @@ def foo : () => do_something();
 foo(); # invalid
 @foo(); # valid
 
-def main : () => {
-}
+def main : () =>;
 ```
 
 Keep in mind that the `@` operator means "at compile time". So functions ran at module-scope will be compile-time, and as such have to follow the non-constant data access and only constant parameters rules.
@@ -298,7 +297,7 @@ With constant arguments you can make generic functions using the `type` type:
 def sum : (T : type, a, b = T) T => a + b;
 ```
 
-It's also possible to use the `is` (see more on [the type families section](#Type-Families-and-'is'-operator)):
+It's also possible to use the `is` (see more on [the type families section](#Type-Families)):
 ```
 def sum : (T : type is number, a, b = T) T => a + b;
 ```
@@ -430,7 +429,7 @@ Because of the 'functions are just values' mindset nested functions are simple:
 ```
 def foo : () => {
   def bar : (x, y = i32) i32 => x + y;
-}
+};
 ```
 
 Function literals assigned to constants are considered 'named functions'. This is basicaly taking adventage of [constant scoping](#Constant-scoping) and not actually a seperate feature. I.e. recursion is possible:
@@ -569,7 +568,7 @@ It's possible to shadow a constant in nested scopes:
 def TEN : 10;
 def foo : () => {
   def TEN : 20; # for this scope only 'TEN' will be 20
-}
+};
 def TEN_AGAIN : TEN; # 'TEN_AGAIN' will be 10
 ```
 
@@ -628,8 +627,15 @@ All variables are immutable by default and cannot be assigned to after its defin
 ```
 def x = 10;
 x = 20; # invalid, x is immutable
-def y = i32;
-y = 10; # invalid, y is immutable
+```
+
+Forward assigning is possible. But only if the variable is not read from before it:
+```
+def x = u32;
+x = 20; # valid
+def y = u32;
+def z = y;
+y = 10; # invalid, 'y' is immutable
 ```
 
 If mutability is a needed factor for a variable use the `mut` attribute on its definition:
@@ -675,8 +681,7 @@ def foo : () i32 => return_some_i32();
 @foo(); # invalid, unused return value
 def _ : @foo(); # valid
 
-def main : () => {
-}
+def main : () =>;
 ```
 
 Technically you can do the same thing using just the variable `_` instead of the constant one. But this is good if in the future you want this value to be a constant:
@@ -1025,7 +1030,7 @@ foo(y!); # invalid
 Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases).
 
 ## Arrays
-Arrays are a buffer of objects of the same time with a compile-time known length.
+Arrays are a buffer of objects of the same type with a compile-time known length.
 
 To define an array open and close square brackets `[]`, in between the square brackets put a positive integer literal or positive integer constant. Follow the brackets by the desired type of the array elements:
 ```
@@ -1058,7 +1063,7 @@ You can also initialize arrays to garbage:
 def arr = [3]u64 ---;
 ```
 
-### Arrays mutability
+### Array mutability
 Because arrays actually store the data for modifying the values you just need to set the array as `mut`:
 ```
 def arr0 = mut [1, 2, 3];
@@ -1206,7 +1211,7 @@ def arr = [1, 2, 3];
 def slice0 = [..]u32 arr; # valid
 ```
 
-Similarlly to pointers (because slices are basically just pointers), they can't be null and always have to point to some array:
+Similarly to pointers (because slices are basically just pointers), they can't be null and always have to point to some array:
 ```
 def slice 0 = [..]i32; # invalid
 ```
@@ -1233,7 +1238,7 @@ def sum : (xs = [..]i32) i32 => {
   def res = 0;
   for x in xs => res += x;
   ret res;
-}
+};
 def x = sum([1, 2, 3, 4]); # x = 10
 def y = sum[1, 2, 3, 4]; # using the one paremeter call convention
 ```
@@ -1246,7 +1251,7 @@ def slice = arr[..];
 def amount = len(slice);
 ```
 
-### Slices mutability
+### Slice mutability
 The slices mutability is more akin to pointers than arrays. If you wan't to modify the values of an array through a slice you need a mutable slice using `[..]mut`:
 ```
 def slice0 = [..]mut u32 [1, 2, 3];
@@ -1263,10 +1268,114 @@ slice[1] = 4; # invalid
 ```
 
 ## Structs
-Struct definition syntax:
+The definition of a struct is very similar to the [definition of a function](#Function-definition-and-calling-conventions). The difference is that you do not use the body assignemnt `=>`:
 ```
 def Some_Struct : (member0 = type0, member1 = type1, member2 = type2, ...);
 ```
+
+Members of a struct are, mostly, variables. So all of this declarations are valid:
+```
+def Some_Struct = (
+  a = u32, # explicit type with default initialization (0 in this case)
+  b, c = u32, # multi-member definition
+  d = u32 1, # explicit type with value
+  e, f, g = u32 2, # multi-member definition with explicit type and vlue
+  h = 3, # inferred type by value
+  i, j = 4, # multi-member definition with inferred type by value
+  k = u32 ---, # garbage initialization
+);
+```
+
+### Struct instantiation
+Regular struct instantion is also similar to [regular function calls](#Function-definition-and-calling-conventions):
+```
+def Some_Struct : (x, y = u32);
+def some_struct_instance = Some_Struct(10, 20);
+```
+
+Infix-call and one parameter like calls aren't valid on struct instantiation though:
+```
+def Foo : (x = u32);
+def Bar : (x, y = u32);
+def a = Foo 10; # invalid
+def b = 10 Foo 20; # invalid
+```
+
+And of course, you can explicitly type an instance:
+```
+def Foo : (x = u32);
+def a = Foo Foo(10);
+```
+
+An instance with no value will be initialized with all the default values specified on the struct:
+```
+def Foo : (x = u32, y = u32 6);
+def a = Foo; # a is created with default values: 'a.x = 0' and 'a.y = 6'
+```
+
+### Struct mutability
+Forward assigning is still possible with immutable structs:
+```
+def Foo : (x = u32, y = u32 6);
+def a = Foo; # not initialized yet
+a = Foo(10, 20); # valid, initialized here
+```
+
+For the forward assigning to work, not only the whole struct cannot be read, but members as well:
+```
+def Foo : (x = u32, y = u32 6);
+def a = Foo; # not initialized yet
+def b = a.x; # 'b = 0'
+a = Foo(10, 20); # invalid, 'a' is already initialized
+```
+
+Forward declaring works only for the whole struct, if you try to assign to a member the struct is assumed to already be properly initialiazed:
+```
+def Foo : (x = u32, y = u32 6);
+def a = Foo;
+a.x = 10; # invalid, 'a' is immutable
+```
+
+For this to be possible, use a mutable instance:
+```
+def Foo : (x = u32, y = u32 6);
+def a = mut Foo; # initializes struct to 'x = 0' and 'y = 6'
+a.x = 10; # invalid, 'a' is immutable
+```
+
+### 'imm' and 'renege':
+Members mutabilities are based on the instance mutability. You can't use the `mut` attribute on field members:
+```
+def Some_Struct(
+  x = mut u32, # error: members can't use the 'mut' attribute
+);
+```
+
+But if you want to enforce _immutability_ there is the `imm` attribute. This attribute can only be used on struct members:
+```
+def Some_Struct(x = i32, y = imm u32);
+def a = mut Some_Struct;
+a.x = 10; # valid, 'a' is mutable
+a.y = 20; # error: 'a.y' field is immutable
+```
+
+To be able to modify the field member use the `renege` keyword:
+```
+def Some_Struct(x = i32, y = imm u32);
+def a = mut Some_Struct;
+renege a.y = 20; # valid
+```
+
+The `renege` will only work on mutable instances:
+```
+def Some_Struct(x = i32, y = imm u32);
+def a = Some_Struct;
+renege a.y = 20; # error: 'a' is immutable
+```
+
+### Constant members
+Work in progress...
+
 
 Constant members without a value have to be at the top
 ```
@@ -1277,8 +1386,6 @@ def Int_List = (
 );
 def numbers = Int_List(u32);
 ```
-
-Work in progress...
 
 ## Unions
 Tagged unions, not raw unions.
@@ -1321,7 +1428,7 @@ Work in progress...
 ## The meta type
 A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
 
-It is a [compile-time-only type](#Compile-time-only-primitive-types) and it follow the same rules as the primitive ones.
+It is a [compile-time-only type](#Compile-time-only-primitive-types) and it follows the same rules as the primitive ones.
 
 All the variants of `meta` have only one member in it: An [optional](#Options) `meta` slice named `child`.
 
@@ -1376,7 +1483,7 @@ def an_actual_identifier : meta.iden some_random_identifier;
 def @an_actual_identifier : 20; # 'some_random_identifier' is defined here with the value of 20
 ```
 
-The `meta.expr`, similarlly to `meta.iden`, can accept expressions directly on it's definition:
+The `meta.expr`, similarly to `meta.iden`, can accept expressions directly on it's definition:
 ```
 def an_actual_expression : meta.expr 3 + 4;
 def something : () i32 => @an_actual_expression; # 'something' returns 7
@@ -1423,7 +1530,7 @@ You can pass values directly, the data for storing the value will be allocated o
 def x = anyrt 10; # valid
 ```
 
-Similarlly to [pointers](#Pointer-definition), `anyrt` variables can't be initialized without any values:
+Similarly to [pointers](#Pointer-definition), `anyrt` variables can't be initialized without any values:
 ```
 def x = anyrt; # error: no value provided
 ```
