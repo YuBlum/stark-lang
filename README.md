@@ -1,14 +1,13 @@
 # Stark
-A simple language for systems programming.
+A language for systems programming.
 
 Current version: 0.1.0
 
 ## Hello, World!
 
 ```
-def io : @import "std.io";
-
-def main : () => io.println("Hello, World!");
+def write : ext std.io.write;
+def main : () => write("Hello, World!\n");
 ```
 
 ## Functions
@@ -57,6 +56,12 @@ Chaining infix function calls is possible (see the [precedence table](#Precedenc
 ```
 def foo : (_a = i32, _b = i32) =>;
 2 foo 4 foo 6; # equivalent to (2 foo 4) foo 6 
+```
+
+Trailing commas are allowed:
+```
+def foo : (x = i32, y = i32, z = i32,) i32 => x+y+z;
+def _ = foo(1, 2, 3,);
 ```
 
 ### Unused arguments
@@ -185,7 +190,7 @@ def foo : () => {
 };
 ```
 
-But this is not recomended, try to keep your functions without much nested expression blocks.
+The verbosity of too many nested `brk`s is intentional. It indicates that you're doing something wrong in your scope management and your function should be simplified or refactored. Therefore multiple nested `brk`s as well as multiple nested expression blocks aren't recommended.
 
 ### Variable and constant arguments
 Most functions arguments are variables, so they can be defined in the same way (see more on [the variables section](#Variable-definitions)):
@@ -326,13 +331,25 @@ def foo : (a = i32, b = i32 10, c = i32) i32 => a+b+c;
 def _ = foo(9, .c = 11);
 ```
 
+If you use unordered paremeters to just skip an argument it's possible to continue to use the function call order:
+```
+def foo : (a = i32, b = i32 10, c, d = i32) i32 => a+b+c;
+def _ = foo(9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
+```
+
 With that in mind if an argument has a default that parameter is optional:
 ```
 def foo : (a, b = i32, c = i32 10) i32 => a+b+c;
 def _ = foo(9, 11);
 ```
 
-This calling convention is the reason why function types have their arguments names in it.
+You can only mix named and unnamed paremeters to skip arguments. So if this mix occur, and the named arguments don't actually follow the function order specified on definition, it'll cause an error:
+```
+def foo : (a = i32, b = i32 10, c, d = i32) i32 => a+b+c;
+def _ = foo(9, .c = 11, .b = 12); # error: invalid order
+```
+
+This calling convention is the reason why [function types have their arguments names in it](#Functions-are-just-values).
 
 ### Implicit constant parameters
 If a constant argument is used in some way by other arguments you can add the `imp` attibute to it. This will make that argument be implicitly defined based on it's first use:
@@ -343,10 +360,25 @@ def y = add(1.6, 2.1);
 def y = add(1.6, 2); # error: an i32 is being passed to 'b' and expected a f32
 ```
 
+If a constant argument is marked as `imp` it has to be used on at least one other non-imp argument:
+```
+def foo : (T : imp number, a, b = i32) i32 => a+b; # error: 'T' has to be used on other arguments
+```
+
 You can still set the value of the constant parameter explictly using the unordered parameter function call:
 ```
 def add : (T : imp number, a, b = T) T => a+b;
 def x = add(.T : u64, 1, 2);
+```
+
+Infix and one-paremeter calls can be used with more than two or one paremeters if the extra ones are constant `imp` arguments:
+```
+def add : (T : imp number, a, b = T) T => a+b;
+def _ = 1 add 2; # valid
+def _ = 1.2 add 2.1; # valid
+def square : (T : imp number, a = T) T => a*a;
+def _ = square 5; # valid
+def _ = square 5.5; # valid
 ```
 
 ### Immutable arguments are references
@@ -401,7 +433,7 @@ def num = (x, y = i32) i32 => x + y;(10, 20); # num is assigned to 30
 
 The type of a function looks something like this:
 ```
-fn(arg0 : type0, arg1 : type1, arg2 = type2, arg3 = type3) return_type
+fn(const_arg0 : type0, const_arg1 : type1, var_arg0 = type0, var_arg1 = type1) return_type
 ```
 
 Here are some examples with functions and what the type will look like:
@@ -418,12 +450,14 @@ def set_any_x  : (T : type, foo = T)      => foo.x = something();
 # set_any_x type:  fn(T : number, x = T, y = T) void
 ```
 
-With that in mind you can define a function without [type inferrency](#Type-inferrency):
+With that in mind you can define a function without [type inference](#Type-inference):
 ```
-def sum_any : fn(T : number, x = T, = T) T (T : number, x, y = T) T => x+y;
+def sum_any : fn(T : number, x = T, y = T) T (T : number, x, y = T) T => x+y;
 ```
 
 But this is extremely verbose.
+
+[Argument names have semantic meaning](#Unordered-parameters). That's why they are included in function types.
 
 Because of the 'functions are just values' mindset nested functions are simple:
 ```
@@ -509,13 +543,13 @@ To define a constant use the `def` keyword followed by an identifier and the con
 def thirty : 30;
 ```
 
-### Type inferrency
+### Type inference
 You can optionally provide a type explicitly to a constant definition:
 ```
 def thirty : i32 30;
 ```
 
-For more info into what type a literal infer check the [inferrency table](#Type-inferrency-by-value-table).
+For more info into what type a literal infer check the [inference table](#Type-inference-by-value-table).
 
 ### Type aliases
 Differently from [variables](#Assignment-after-definition), constants can't be assigned after definition. If you define a constant to be equal to a type, you'll instead create a type aliases:
@@ -752,7 +786,7 @@ Booleans are really simple, they just can have two states: `true` or `false`
 - `true`: Equivalent to 1 in integers
 - `false`: Equivalent to 0 in integers
 
-### Type inferrency by value table
+### Type inference by value table
 | Value            | Decription       | Constant inferred type              | Variable inferred type                                            |
 |------------------|------------------|-------------------------------------|-------------------------------------------------------------------|
 | 1234             | Integer literal  | anyi (can be passed to any integer) | Inferred by first usage (u8, i16, etc). If needed defaults to i32 |
@@ -942,6 +976,33 @@ def _ = p0 == p2; # valid, _ = false
 def _ = p0 == p3; # valid, _ = true
 ```
 
+### Taking the address of literals
+It's possible to take the address of literals:
+```
+def ptr = &10;
+```
+
+This is sugar for:
+```
+def _a = 10;
+def ptr = &_a;
+```
+
+So the lifetime of the invisible variable created is stack based.
+
+Mutable address are also possible:
+```
+def ptr = &mut 10;
+```
+
+Sugar for:
+```
+def _a = mut 10;
+def ptr = &_a;
+```
+
+It works for any literal.
+
 ## Casting
 Stark is strongly typed. You can't pass an u8 to a f32 or even an i8 to an i16. But sometimes casting is needed, on those cases use the `->` operator:
 ```
@@ -1069,7 +1130,7 @@ Because arrays actually store the data for modifying the values you just need to
 def arr0 = mut [1, 2, 3];
 arr0[0] = 4; # valid
 def arr1 = [1, 2, 3];
-arr1[0] = 4; # invalid array is mutable
+arr1[0] = 4; # invalid, array is mutable
 ```
 
 ### builtin 'len'
@@ -1273,6 +1334,8 @@ The definition of a struct is very similar to the [definition of a function](#Fu
 def Some_Struct : (member0 = type0, member1 = type1, member2 = type2, ...);
 ```
 
+It can facilitate to think of structs as "bodyless functions" because a lot of the arguments rules apply for them. But there are some differences.
+
 Members of a struct are, mostly, variables. So all of this declarations are valid:
 ```
 def Some_Struct = (
@@ -1313,6 +1376,43 @@ def Foo : (x = u32, y = u32 6);
 def a = Foo; # a is created with default values: 'a.x = 0' and 'a.y = 6'
 ```
 
+Named members instantiation is also possible and follow the same rules as the [function ones](#Unordered-parameters):
+```
+def Foo : (a = i32, b = i32 10, c, d = i32);
+def _ = Foo(.c = 10, .a = 4, .b = -15, .d = 4);
+def _ = Foo(9, .c = 11, .d = 12);
+def _ = Foo(9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
+def _ = Foo(9, .c = 11, .b = 12); # error: invalid order
+```
+
+You can leave out any member at instantiation and it'll use it's default value:
+```
+def Foo : (a = i32, b = i32 10, c, d = i32);
+def _ = Foo(9); # a == 9, b == 10, c == 0, d == 0
+def _ = Foo(.d = 12); # a == 0, b == 10, c == 0, d == 12
+def _ = Foo(9, .c = 11); # a == 9, b == 10, c == 11, d == 0
+```
+
+Passing no arguments to the initialization will use initialize all of the members to their proper default values:
+```
+def Foo : (a = i32, b = i32 10, c, d = i32);
+def _ = Foo(); # a == 0, b == 10, c == 0, d == 0
+```
+
+It's similar to just using the type explicitly without no initialization:
+```
+def Foo : (a = i32, b = i32 10, c, d = i32);
+def _ = Foo(); # a == 0, b == 10, c == 0, d == 0
+def _ = Foo; # a == 0, b == 10, c == 0, d == 0
+```
+
+The difference is that you're explicitly assigning, so forward assigning is not an option:
+```
+def Foo : (a = i32, b = i32 10, c, d = i32);
+def a = Foo(); # a == 0, b == 10, c == 0, d == 0
+a = Foo(1, 2, 3, 4); # error: 'a' is immutable
+```
+
 ### Struct mutability
 Forward assigning is still possible with immutable structs:
 ```
@@ -1346,14 +1446,14 @@ a.x = 10; # invalid, 'a' is immutable
 ### 'imm' and 'renege':
 Members mutabilities are based on the instance mutability. You can't use the `mut` attribute on field members:
 ```
-def Some_Struct(
+def Some_Struct : (
   x = mut u32, # error: members can't use the 'mut' attribute
 );
 ```
 
 But if you want to enforce _immutability_ there is the `imm` attribute. This attribute can only be used on struct members:
 ```
-def Some_Struct(x = i32, y = imm u32);
+def Some_Struct : (x = i32, y = imm u32);
 def a = mut Some_Struct;
 a.x = 10; # valid, 'a' is mutable
 a.y = 20; # error: 'a.y' field is immutable
@@ -1361,30 +1461,416 @@ a.y = 20; # error: 'a.y' field is immutable
 
 To be able to modify the field member use the `renege` keyword:
 ```
-def Some_Struct(x = i32, y = imm u32);
+def Some_Struct : (x = i32, y = imm u32);
 def a = mut Some_Struct;
 renege a.y = 20; # valid
 ```
 
 The `renege` will only work on mutable instances:
 ```
-def Some_Struct(x = i32, y = imm u32);
+def Some_Struct : (x = i32, y = imm u32);
 def a = Some_Struct;
 renege a.y = 20; # error: 'a' is immutable
 ```
 
 ### Constant members
-Work in progress...
-
-
-Constant members without a value have to be at the top
+Constant members are extremely similar to [functions constant arguments](#Variable-and-constant-arguments): They have to come before any variable member and they can't have default values:
 ```
-def Int_List = (
-  T : type is integer,
-  buffer = *T,
-  capacity, length = u32
+def Vec2_0 : (x, y = T, T : type); # invalid
+def Vec2_1 : (T : type u32, x, y = T); # invalid
+def Vec2_2 : (T : type, y = T); # valid
+```
+
+Instantiating a struct with a constant member follow all the previous rules established:
+```
+def Foo : (T : number, a = T, b = T 10, c, d = T);
+def _ = Foo(.c = 10, .a = 4, .b = -15, .d = 4, .T = i32);
+def _ = Foo(i32, 9, .c = 11, .d = 12);
+def _ = Foo(i32, 9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
+def _ = Foo(i32, 9, .c = 11, .b = 12); # error: invalid order
+def _ = Foo(i32); # a == 0, b == 10, c == 0, d == 0
+def _ = Foo(i32, .d = 12); # a == 0, b == 10, c == 0, d == 12
+def _ = Foo(i32, 9, .c = 11); # a == 9, b == 10, c == 11, d == 0
+```
+
+The `imp` attribute can be used on constant members:
+```
+def Vec2 : (T : imp number, x, y = T);
+def _ = Vec2(1, 2); # T = i32
+def _ = Vec2(1.2, 2.1); # T = f32
+```
+
+And follow the same rules as `imp` arguments:
+```
+def Vec2 : (T : imp number, x, y = f32); # error: 'T' needs to be used in other members
+```
+
+The type of a variable with a constant members is `Struct(<constant-arguments>)`, this is called a 'struct variant':
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(1, 2) # type_of(a) == Vec2(i32)
+def b = Vec2(1.2, 2.1) # type_of(b) == Vec2(f32)
+def c = Vec2(i32) Vec2(3, 4); # Explicitly typed
+```
+
+Structs with constant members without the `imp` attribute can't be forward assigned because of this:
+```
+def Vec2 : (T : number, x, y = T);
+def a = Vec2(i32); # 'a' type is actually being inferred by the initializer 'Vec2(i32)'
+def b = Vec2(i32) Vec2(i32); # equivalent to 'a' but explicitly typed.
+a = Vec2(i32, 1, 2); # error: 'a' is immutable
+```
+
+With the `imp` attribute is fine though:
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(i32);
+a = Vec2(1, 2); # valid
+```
+
+Structs with `imp` constant members cannot be empty initialized:
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(); # error: 'T' needs to be assigned
+```
+
+Assign the constant member explicitly if this is desired behaviour:
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(.T = i32); # valid
+```
+
+Or set the variable type explicitly, them the empty initializer will work:
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(i32) Vec2(); # valid
+```
+
+It's possible to access constant members:
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(1, 2);
+def b = a.T Vec2(); # valid: 
+```
+
+But is not possible to modify them:
+```
+def Vec2 : (T : imp number, x, y = T);
+def a = Vec2(1, 2);
+a.T = f32; # error: 'T' is a constant
+```
+
+To pass structs with constant members to functions the struct variant must be explicit:
+```
+def Vec2 : (T : imp number, x, y = T);
+def vec2_add(a, b = Vec2(i32)) Vec2(i32) => Vec2(a.x+b.x, a.y+b.y);
+def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
+def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # invalid
+```
+
+If generic behavior is desired use constant arguments:
+```
+def Vec2 : (T : imp number, x, y = T);
+def vec2_add(T : imp number, a, b = Vec2(T)) Vec2(T) => Vec2(a.x+b.x, a.y+b.y);
+def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
+def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # valid
+```
+
+A struct always has to have at least one variable member:
+```
+def Vec2 : (T : imp number, a, b : T); # error: no variable members
+```
+
+### Static constants
+Member constants are per instance constants and cannot have a default value. Static constants are per struct constant and they need to have a value.
+
+To define a static constant use the following syntax:
+```
+def <struct>.<constant-name> : <value>;
+```
+
+This constant can be accessed only via the struct name, not by it's instances:
+```
+def Point : (x, y = i32);
+def Point.ONE : Point(1, 1);
+def p0 = Point.ONE; # valid
+def p1 = p0.ONE; # error: 'ONE' is not a member of 'Point'
+```
+
+You can have member constants and variables with the same name as static constants:
+```
+def Point : (ONE : Point, x, y = i32);
+Point.ONE : Point(Point(1, 1), 1, 1);
+def p0 = Point.ONE; # valid
+def p1 = p0.ONE; # valid
+```
+
+You can access static constants via struct variants:
+```
+def Vec2 : (T : number, x, y = T);
+def Vec2.ONE : Vec2(1, 1);
+def v0 = Vec2(f32).ONE; # in this case a Vec2(i32) is being generated from a Vec2(f32) variant
+```
+
+Inside static constant initializers, `()` refers to the current struct variant. Use `().<name>` to access constant member values:
+```
+def Vec2 : (T : number, x, y = T);
+def Vec2.ONE : Vec2(1 -> ().T, 1 -> ().T);
+def v0 = Vec2(f32).ONE; # generates an Vec2(f32) with x and y as 1
+```
+
+If a static constant uses `()`, it must be called only from struct variants. Accessing it via the base struct will cause an error:
+```
+def Vec2 : (T : number, x, y = T);
+def Vec2.ONE : Vec2(1 -> ().T, 1 -> ().T);
+def v0 = Vec2.ONE; # error: 'ONE' can only be accessed via 'Vec2' variants
+```
+
+Static variables aren't a thing.
+
+#### Methods
+Methods are static constant functions that accept a, mutable or immutable, pointer, reference, view or direct value to the struct of the static constant itself as it's first variable argument:
+```
+def Vec2 : (x, y = f32);
+def Vec2.add : (self = Vec2, other = Vec2) => Vec2(self.x+other.x, self.y+other.y);
+def a = Vec2(1, 2);
+def b = Vec2(3, 4);
+def c = Vec2.add(a, b);
+```
+
+Methods are the only static constants that can be accessed via instances. This will actually pass an address of value to the instance as the method first paremeter:
+```
+def Vec2 : (x, y = f32);
+def Vec2.add : (self, other = Vec2) => Vec2(self.x+other.x, self.y+other.y);
+def a = Vec2(1, 2);
+def b = Vec2(3, 4);
+def c = a.add(b); # sugar for Vec2.add(a, b)
+```
+
+`self` is just an argument so it can use any of the argument definition established previously:
+```
+def Vec2 : (x, y = f32);
+def Vec2.add0 : (self = Vec2, other = Vec2) => ...; # valid
+def Vec2.add1 : (self, other = Vec2) => ...; # valid
+```
+
+It's a convention to call the `self` argument as `self`, it actually can be named as anything:
+```
+def Vec2 : (x, y = f32);
+def Vec2.add : (this, other = Vec2) => Vec2(this.x+other.x, this.y+other.y);
+```
+
+Methods and static constants as a whole are mainly used on structs, but they actually can be defined for _any_ type:
+```
+def i32.square : (self = i32) => self*self;
+def twenty_five = 25.square();
+```
+
+Infix calls cannot be used on method calls. But if the method takes only one argument besides the `self` argument the one-parameter call convention is possible:
+```
+def i32.add : (self, other = i32) => self+other;
+def twenty_five = 20.add 5;
+```
+
+If a method have the same name as a member constant or variable the member takes priority, so methods have to be called as standard static constant functions:
+```
+def Foo : (x = i32, one = i32 1);
+def Foo.one : (_self = Foo) i32 => 1;
+def a = Foo(.one = 2);
+def one = mut i32;
+one = a.one; # one == 2
+one = Foo.one(a); # one == 1
+```
+
+Keep in mind that you technically can use [function pointers](#Function-pointers) to have functions directly inside structs:
+```
+def Vec2 : (
+  x, y = f32,
+  add = imm &(self, other = Vec2) { # the 'Vec2' in here doesn't count as a recursive variable
+    ret Vec2(self.x+other.x, self.y+other.y);
+  },
+)
+```
+
+This is not recommended if the intention is method behavior because: it'll waste memory, it'll be slower than methods because of function pointer derreferencing, the method-like call will not work and the member it's not garanteed to always have the same beahvior even with `imm`.
+
+### 'take' attribute
+There are times when you want to treat the members of a struct type member as its own. Use the `take` attribute for that:
+```
+def Vec2 : (x, y = f32);
+def Entity : (
+  position = take Vec2,
+  id = u32,
 );
-def numbers = Int_List(u32);
+```
+
+Then the members of the member type itself can be accessed by the base struct:
+```
+def ent = mut Entity();
+ent.x = 10; # valid, same as 'ent.position.x = 10'
+```
+
+If member names conflict the own struct member takes priority:
+```
+def Vec2 : (x, y = f32);
+def Entity : (
+  position = take Vec2,
+  x = u32,
+  id = u32,
+);
+def ent = mut Entity();
+ent.x = 10; # this modifies the 'Entity' 'x' not the position 'x'
+```
+
+If conflict between two takes arrises you simply can't use the shortcut:
+```
+def Vec2 : (x, y = f32);
+def Entity : (
+  position = take Vec2,
+  velocity = take Vec2,
+  id = u32,
+);
+def ent = mut Entity();
+ent.x = 10; # error: 'x' conflicting 'take' members
+```
+
+`take` also works with tuples, unions and basically any type with members.
+
+### Structure of Arrays
+Most languages have the Array of Structures layout as the default way to store buffers of structs.
+
+With the AoS layout a struct that looks like this:
+```
+def Foo : (x, y, z = i32);
+```
+
+Would have this layout on arrays and other sort of buffers:
+```
++-----------------------------------------------------------+
+| x0 | y0 | z0 | x1 | y1 | z1 | x2 | y2 | z2 | x3 | y3 | z3 |
++-----------------------------------------------------------+
+```
+
+All packed in one contiguous array. This type of buffer made sense on old computers. But on modern CPUs this module of data storage is very slow for cache locality and SIMD instructions.
+
+The most efficient way of storing that is actually multiple arrays for each member, this method is called Structure of Arrays:
+```
++-------------------+
+| x0 | x1 | x2 | x3 |
++-------------------+
++-------------------+
+| y0 | y1 | y2 | y3 |
++-------------------+
++-------------------+
+| z0 | z1 | z2 | z3 |
++-------------------+
+```
+
+In other languages achieving this kind of layout can be quite cumbersome to create and handle, an example in C would be:
+
+This would translate to this C code:
+```c
+#define FOO_BUFF_LEN 100 
+typedef struct {
+  int x[FOO_BUFF_LEN];
+  int y[FOO_BUFF_LEN];
+  int z[FOO_BUFF_LEN];
+} Foo;
+Foo foo_buf;
+for (int i = 0; i < FOO_BUFF_LEN; i++) {
+  foo_buf.x[i] = i;
+}
+```
+
+In stark when creating an array of some struct you can use the `soa` attribute, that way this layout is achieve automatically:
+```
+def Foo : (x, y, z = i32);
+def foo_buf = soa [3]Foo;
+for i in 0..@len(foo_buf) => foo_buf[i].x = i;
+```
+
+That way structure of arrays are handled in a extremely similar way to the familiar AoS.
+
+Nested structures will also follow the SoA layout. This:
+```
+def Vec2 : (x, y = f32);
+def Entity : (position = Vec2, id = u32);
+def ent_buf = soa [3]Foo;
+for i in 0..@len(ent_buf) => ent_buf[i].position.x = i;
+```
+
+Would translate to this C code:
+```c
+#define ENT_BUFF_LEN 100 
+typedef struct {
+  float position_x[ENT_BUFF_LEN];
+  float position_y[ENT_BUFF_LEN];
+  unsigned int id[ENT_BUFF_LEN];
+} Entity;
+Entity ent_buf;
+for (int i = 0; i < ENT_BUFF_LEN; i++) {
+  ent_buf.position_x[i] = i;
+}
+```
+
+If a member struct is not supposed to unroll like this add the `crate` attribute to it:
+```
+def Vec2 : (x, y = f32);
+def Entity : (position = crate Vec2, id = u32);
+def ent_buf = soa [3]Foo;
+for i in 0..@len(ent_buf) => ent_buf[i].position.x = i;
+```
+
+Then the `position` would not be unrolled, this is the C translation:
+```c
+#define ENT_BUFF_LEN 100 
+typedef struct { float x, y; } Vec2;
+typedef struct {
+  Vec2 position[ENT_BUFF_LEN]
+  unsigned int id[ENT_BUFF_LEN];
+} Entity;
+Entity ent_buf;
+for (int i = 0; i < ENT_BUFF_LEN; i++) {
+  ent_buf.position[i].x = i;
+}
+```
+
+#### Views
+There is some pitfalls for using SoA over AoS, the major one is passing pointers to individual elements of the array. This is actually not possible in stark:
+```
+def Foo : (x, y, z = i32);
+def foo_buf = soa [100]Foo;
+def ptr_to_some_foo = &foo_buf[0]; # error: taking address of soa buffer element
+```
+
+If this is inteded behavior what you really want is a view, not a pointer. Views are a collection of pointers into a SoA buffer, to take a view of a struct element use the `[&]` operator:
+```
+def Foo : (x, y, z = i32);
+def foo_buf = soa [100]Foo;
+def view_to_some_foo = [&]foo_buf[0]; # valid
+```
+
+The "all values are immutable by default" rule applies to views, use `[&]mut` to take a mutable view:
+```
+def Foo : (x, y, z = i32);
+def foo_buf = [100]Foo;
+def view_to_some_foo = [&]mut foo_buf[0];
+view_to_some_foo.x = 10; # foo_buf[0].x == 10
+```
+
+The type of a view is `[*]` for immutable and `[*]mut` for mutable followed by the type that the view views into:
+```
+def view0 = [*]Foo [&]foo_buf[0];
+def view1 = [*]mut Foo [&]mut foo_buf[0];
+```
+
+Keep in mind that SoA elements can't use the [arguments as references rule](#Immutable-arguments-are-references) optimization. The values will have to be copied.
+
+### Packed structs
+Structs have padding between members if necessary. This is done for optimization reasons, but if a struct has to be packed without padding add `pack` as prefix in the struct definition:
+```
+def Some_Unpacked_File_Header : (tag = [4]achar, big_id = u64, size = u16); # size_of(Some_Unpacked_File_Header) = 24 bytes
+def Some_Packed_File_Header : pack(tag = [4]achar, big_id = u64, size = u16); # size_of(Some_Unpacked_File_Header) = 14 bytes
 ```
 
 ## Unions
@@ -1415,7 +1901,7 @@ def some_union = Some_Union.u64(0); # some_union is of Some_Union type tagged as
 def some_enum = Some_Enum_Like_Union.Value0(); # some_enum is of type Some_Enum_Like_Union tagged as Value0
 ```
 
-To get the amount of tags in a union use the bultin `len()`. Like array lengths union tags amount are known at compile time:
+To get the amount of tags in a union use the builtin `len()`. Like array lengths union tags amount are known at compile time:
 ```
 def Week : Monday()|Tuesday()|wednesday()|Thursday()|Friday();
 def week_amount = @len(Week); # week_amount 5
@@ -1517,7 +2003,7 @@ end;
 Work in progress...
 
 ## The anyrt type
-`anyrt` is another bultin union. It stands for 'any runtime', and as it implies, you can pass any value to it at runtime and it'll hold type information plus a immutable pointer to the data:
+`anyrt` is another builtin union. It stands for 'any runtime', and as it implies, you can pass any value to it at runtime and it'll hold type information plus a immutable pointer to the data:
 ```
 def a = 10;
 def b = "hello";
@@ -1590,6 +2076,12 @@ Work in progress...
 ## Type families
 Work in progress...
 
+## Overload sets
+NOTE: unordered parameters and default values can be a real pain here
+Work in progress...
+### Operators are overload sets
+Work in progress...
+
 ## Precedence table
 | Precedence | Operator | Description                                | Associativity |
 |------------|----------|--------------------------------------------|---------------|
@@ -1646,18 +2138,28 @@ Work in progress...
 | 14         | ^=       | Variable assignment by bitwise xor         | Right to Left |
 | 15         | ,        | Comma                                      | Right to Left |
 
-## Overload sets
-NOTE: unordered parameters and default values can be a real pain here
+## Concurrency
 Work in progress...
-### Operators are overload sets
+
+## Namespaces
 Work in progress...
 
 ## Modules, build system and linking
 Work in progress...
 
-## Linking with C libraries
+## FFI
 Work in progress...
 
-## Allocator, arenas and Arena_Array
+## Base module
+Work in progress...
+
+## Mem module
+NOTE: arena allocator and Arena_Array
+Work in progress...
+
+## I/O module
+Work in progress...
+
+## OS module
 Work in progress...
 
