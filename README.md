@@ -841,11 +841,12 @@ Booleans are really simple, they just can have two states: `true` or `false`
 | \[3\]21          | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
 | $code END END    | Code literal     | meta                                | meta (Compile-time only)                                          |
 
-__Caveats:__
+__Caveats and Notes:__
 * Passing constants with `anyi` type into mismatched integers will cause an error. E.g. constant with value 1234 passed to an `u8`
 * Passing constants with `anys` type with non-ascii characters into a `cstr` will cause an error.
 * Binary, octal and hexdecimal literals can't be negative. But they can be assigned to signed integers.
 * An array type will always be based on the inferred type of the first element. E.g. `array = [1, 2, 3]` == `array = [3]inferred-type-of-array[0]`
+* Integer literals can be separated by underscores for readability. E.g. `1_000_000`
 
 ## Pointers
 You can grab a pointer to a variable using the `&` operator:
@@ -945,7 +946,7 @@ Because of that reason it's not possible to initialize pointers to garbage:
 def ptr = *i32 ---; # error: uninitialized pointer
 ```
 
-Often you actually don't need a pointer that points to nothing. Though, sometimes when interacting with the OS, C APIs or something of that sort a nullable pointer are needed. Use an [optinal pointer](#Options) on that occasions:
+Often you actually don't need a pointer that points to nothing. Though, sometimes when interacting with the OS, C APIs or something of that sort a nullable pointer is needed. Use an [optinal pointer](#Options) on that occasions:
 ```py
 def ptr = ?*i32; # valid, initialized to 'null'
 ```
@@ -958,7 +959,7 @@ def ptr = ?*i32 ---; # valid: initialized to garbage
 Do not abuse of optional pointers. Only use when strictly necessary.
 
 ### Void pointer
-[The void type](#The-void-type) is a type that holds no value. So a pointer to a `void` is basically a pointer to nothing, but because always point must point to something, they're a pointer to anything:
+[The void type](#The-void-type) is a type that holds no value. So a pointer to a `void` is basically a pointer to nothing, but because pointers must always point to something, they're a pointer to anything:
 ```py
 def a = i32;
 def b = f64;
@@ -1000,7 +1001,7 @@ def ptr = &_a;
 
 So the lifetime of the invisible variable created is stack based.
 
-Mutable address are also possible:
+Mutable addresses are also possible:
 ```py
 def ptr = &mut 10;
 ```
@@ -1482,6 +1483,17 @@ def a = mut Foo; # initializes struct to 'x = 0' and 'y = 6'
 a.x = 10; # invalid, 'a' is immutable
 ```
 
+As most things in stark structs are anonymous. So it is possible to use the struct literal directly on a variable type, argument type, etc:
+```py
+def foo = (x, y, z = i32); # Foo has the type '(x, y, z = i32)'
+foo = (1, 2, 3); # valid
+```
+
+You can use the initialization on the struct literal directly:
+```py
+def foo = (x, y, z = i32)(.z = 1, .x = 2, .y = 3); # valid
+```
+
 ### 'imm' and 'renege':
 Members mutabilities are based on the instance mutability. You can't use the `mut` attribute on field members:
 ```py
@@ -1926,7 +1938,7 @@ def view = [*]Foo [&]foo_buf[0];
 *view = Foo(1, 2, 3);
 ```
 
-Keep in mind that SoA elements can't use the [arguments as references rule](#Immutable-arguments-are-references) optimization. The values will have to be copied.
+Keep in mind that SoA elements can't use the [arguments as references rule](#Immutable-arguments-are-references) for optimization. The values will have to be copied.
 
 It is also only possible to use methods from SoA elements that receive a view or a value:
 ```py
@@ -1949,18 +1961,154 @@ def Some_Packed_File_Header : pack(tag = [4]achar, big_id = u64, size = u16); # 
 ```
 
 ## Unions
+Unions are a collection of _tags_. Each tag represents a unique variant of the union, associated with a specific type. The _tag_ acts as the discriminator, and the _type_ defines how data must be hold. 
+
+To define a union tag, first put the name of the tag, followed by the desired type to be associated with it (e.g. `tag type`). To add an additional tag use `|` as a separator. Every tag must be enclosed by a single par of paranthesis to be a valid union definition:
+```py
+def Some_Union : (tag0 type0|tag1 type1|...);
+```
+
+A simple example:
+```py
+def Some_Struct : (a, b, c = i32);
+def Numbers : (Integer i32|Floating_Point f32|A_Tag Some_Struct);
+```
+
+Trailing `|` are allowed:
+```py
+def Some_Struct : (a, b, c = i32);
+def Numbers : (Integer i32|Floating_Point f32|A_Tag Some_Struct|);
+```
+
+And of course, direct struct literals are allowed:
+
+```py
+def Numbers : (Integer i32|Floating_Point f32|A_Tag(a, b, c = i32)|);
+```
+
+### Repeated tag name and tag type
+Tags can have names of outside constants and predefined types:
+```py
+def Vec2 : (x, y = u32);
+def Numbers : (i32 i32|f32 f32|Vec2 Vec2); # valid
+```
+
+This is repetitive. To overcome this problem add `+` as a suffix to the tag name:
+```py
+def Vec2 : (x, y = u32);
+def Numbers : (i32+|f32+|Vec2+); # shortcut for (i32 i32|f32 f32|Vec2 Vec2)
+```
+
+### Tags numeric representation
+Unions tags are just integers IDs. The first tag defaults to 0 and each subsequent tag incremeant by 1 automatically.
+
+It's possible to set the tag value manually:
+```py
+def Some_Union : (Tag0 = 1 i32|Tag1 = 2 u32|Tag2 = 0 f32);
+```
+
+Tags with the same underlying type can have the same numeric value:
+```py
+def Some_Union : (Tag0 = 0 i32|Tag1 = 0 i32); # valid
+```
+
+And tags with different underlying types cannot have the same numeric value:
+```py
+def Some_Union : (Tag0 = 0 i32|Tag1 = 0 u32); # error: 'Tag0' and 'Tag1' share same tag number, but have diffent underlying types
+```
+
+Also, after setting a tag numeric value manually subsequent tags still have the value incremeanted manually:
+```py
+def Some_Union : (Tag0 i32|Tag1 = 3 u32|Tag2 f32); # Tag0 == 0, Tag1 == 3, Tag2 == 4
+```
+
+Tags can be negative:
+```py
+def Some_Union : (Tag0 = -2 i32|Tag1 u32|Tag2 f32); # Tag0 == -2, Tag1 == -1, Tag2 == 0
+```
+
+The tag numeric ID type always defaults to the smallest possible type that holds the range of all tags numeric values. Unsigned types are always prioritized:
+- `u8` in between 0 and 255
+- `i8` in between -128 and 127
+- `u16` in between 0 and 65_535
+- `i16` in between -32768 and 32767
+- `u32` in between 0 and 4_294_967_295
+- `i32` in between -2_147_483_648 and 2_147_483_647
+- `u64` in between 0 and 18_446_744_073_709_551_615
+- `i64` in between -9_223_372_036_854_775_808 and 9_223_372_036_854_775_807
+
+But if you desire to enforce a specific integer type on the tags you can do so:
+```py
+def Some_Union : (Tag0 = 256 i32) u8; # error: union with tags of type 'u8' can't hold the tag numeric value of '256'
+```
+
+### Union instantiation
+Unions don't have a specific initialization like [structs](#Struct-instantiation). You actually just need to provide the correct union type + tag to a variable with the following syntax `<union>.<tag>`:
+```py
+def Vec2 : (x, y = f32);
+def Some_Union : (Number i32|String str|Vector Vec2);
+def number = Some_Union.Number; # 'number' is of type 'Some_Union.Number'
+def string = Some_Union.String; # 'string' is of type 'Some_Union.String'
+def vector = Some_Union.Vector; # 'vector' is of type 'Some_Union.Vector'
+```
+
+Then you simply just pass the appropriete values or initializators:
+```py
+def Vec2 : (x, y = f32);
+def Some_Union : (Number i32|String str|Vector Vec2);
+def number = Some_Union.Number 10;
+def string = Some_Union.String "10";
+def vector = Some_Union.Vector Vec2(10.0, 0.10);
+```
+
+Because each union tag already holds the proper type, you can initialize a struct without the explicit type:
+```py
+def Vec2 : (x, y = f32);
+def Some_Union : (Number i32|String str|Vector Vec2);
+def vector = Some_Union.Vector(10.0, 0.10); # valid
+```
+
+You can then treat the variable as if it was a normal instance of that type:
+```py
+def Vec2 : (x, y = f32);
+def Some_Union : (Number i32|String str|Vector Vec2);
+def vector = Some_Union.Vector(1.0, 2.0); # valid
+def x = vector.x; # valid
+```
+
+Keep in mind that the actual type of the union isn't `<union>.<tag>`, just `<union>`. The tag just signals to the compiler how the variable data and type checking should be treated.
+
+### Changing a tag from an union
+Work in progress...
+
+### Unions mutability
+Work in progress...
+
+### Untyped unions
+Work in progress...
+
+### Unions constant members
+Work in progress...
+
+### Unions static constants
+Work in progress...
+
+### Untagged unions
+Work in progress...
+
 Tagged unions, not raw unions.
 
 Union definition syntax:
 ```py
 def something : () => ;
-def Some_Union : type0|type1|type2|...;
+def Some_Union : tag0 type0|tag1 type1|tag2 type2|...;
 ```
 
 Examples:
 ```py
 def Some_Struct : (a, b = f32);
 
+def Result : (T, E : type|Ok T|Err E);
 def Some_Union : i32|f32|u64;
 def Some_Invalid_Union : i32|i32|f32|u64; # error: repeating type
 def Some_Complex_Union : i32|Some_Struct|Some_Union_Defined_Struct(x, y = i32)|Some_Union_Defined_Tuple(i32, i32);
