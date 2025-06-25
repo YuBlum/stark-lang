@@ -208,8 +208,12 @@ def fn0 : (_x = i32) =>;
 def fn1 : (_x, _y = i32, _c = f32) =>;
 def fn2 : (_x = i32 1) =>; # default values have to be compile-time constants
 def fn3 : (_x, _y = i32 1) =>;
-def fn4 : (_x = 0) =>;
-def fn5 : (_x, _y = 0, _c, _d = 0.0) =>;
+def fn4 : (_x, _y = 0, _c, _d = 0.0) =>;
+```
+
+The only exception is inferred types by value:
+```py
+def foo : (_x = 0) =>; #error: argument with no explicit type
 ```
 
 Because function arguments are variables they also are [immutable](#Variable-mutability) by default. Make them mutable with the `mut` attribute:
@@ -659,7 +663,7 @@ def x, y = i32; # both x and y are of type 'i32' and initialized to 0
 ```
 
 ### Default initialization
-When you define a variable without giving it a default value it'll always default to 0 ([or whatever the default value is](Default-member-values)).
+When you define a variable without giving it a default value it'll always default to 0 ([or whatever the default value is](#Default-values)).
 
 If you want to garbage initialize a variable, for performance or whatever reasons, you can do so explicitly:
 ```py
@@ -847,6 +851,16 @@ __Caveats and Notes:__
 * Binary, octal and hexdecimal literals can't be negative. But they can be assigned to signed integers.
 * An array type will always be based on the inferred type of the first element. E.g. `array = [1, 2, 3]` == `array = [3]inferred-type-of-array[0]`
 * Integer literals can be separated by underscores for readability. E.g. `1_000_000`
+
+### Default values
+Every type has it's own set of default values:
+- _Integers:_ Defaults to 0
+- _Floating points:_ Defaults to 0.0
+- _Strings:_ Defaults to ""
+- _Structs:_ Defaults to their members defaults
+- _Tuples:_ Defaults to their members defaults
+- _Unions:_ Defaults to the specified tag default value
+- _Arrays:_ Defaults to the default of their type
 
 ## Pointers
 You can grab a pointer to a variable using the `&` operator:
@@ -1081,6 +1095,25 @@ Keep in mind that when casting `str -> cstr` non-ascii characters will be transl
 def some_cstr = "olá" -> cstr; # 'á' will become -1 and the printing will be weird
 ```
 
+### Union casting 
+Casting between union tags is possible:
+```py
+def Some_Union : (i32+|str+);
+def x = Some_Union.str "hi";
+def _ = x -> Some_Union.i32; # valid
+def _ = x -> .i32; # valid
+```
+
+This just changes the tag of the casted union, the data will remain the same.
+
+It's not possible to cast between different unions, even if the data and tag numeric value would technically remain the same:
+```py
+def Some_Union0 : (i32+|str+);
+def Some_Union1 : (i32+|str+);
+def x = Some_Union0.str "hi";
+def _ = x -> Some_Union1.str; # invalid
+```
+
 ### Auto casting
 Sometimes you don't want to explicitly cast to a type. Use the `!` operator as an automatic `-> type` cast to the expected type:
 ```py
@@ -1098,8 +1131,16 @@ foo(x!); # invalid
 foo(y!); # invalid
 ```
 
+Or unions:
+```py
+def Some_Union : (i32+|str+);
+def foo : (x = Some_Union.i32) => ...;
+def x = Some_Union.str "hi";
+foo(x!); # invalid
+```
+
 ### Invalid casting
-Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases).
+Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases or unions).
 
 ## Arrays
 Arrays are a buffer of objects of the same type with a compile-time known length.
@@ -1354,10 +1395,18 @@ def Some_Struct = (
   b, c = u32, # multi-member definition
   d = u32 1, # explicit type with value
   e, f, g = u32 2, # multi-member definition with explicit type and vlue
-  h = 3, # inferred type by value
-  i, j = 4, # multi-member definition with inferred type by value
-  k = u32 ---, # garbage initialization
+  h, i = 4, # multi-member definition with inferred type by value
+  j = u32 ---, # garbage initialization
 );
+```
+
+Similarly to function arguments, the only exception is inferred types by value:
+```py
+def Some_Struct = (
+  a = 3, # error: member with no explicit type
+);
+```
+```py
 ```
 
 ### Struct instantiation
@@ -1424,6 +1473,7 @@ def a = Foo(); # a == 0, b == 10, c == 0, d == 0
 a = Foo(1, 2, 3, 4); # error: 'a' is immutable
 ```
 
+#### Implicit struct name on instantiation
 If a variable already has the type of a struct you can initialize it with the parenthesis directly, without the struct name:
 ```py
 def Vec2 : (x, y = f32);
@@ -1961,9 +2011,9 @@ def Some_Packed_File_Header : pack(tag = [4]achar, big_id = u64, size = u16); # 
 ```
 
 ## Unions
-Unions are a collection of _tags_. Each tag represents a unique variant of the union, associated with a specific type. The _tag_ acts as the discriminator, and the _type_ defines how data must be hold. 
+Unions are a collection of _tags_. Each tag represents a unique variant of the union, associated with a specific type. The _tag_ acts as the discriminator, and the _type_ defines how data must be held. 
 
-To define a union tag, first put the name of the tag, followed by the desired type to be associated with it (e.g. `tag type`). To add an additional tag use `|` as a separator. Every tag must be enclosed by a single par of paranthesis to be a valid union definition:
+To define an union tag, first put the name of the tag, followed by the desired type to be associated with it (e.g. `tag type`). To add an additional tag use `|`, meaning 'or', as a separator. Every tag must be enclosed by a single pair of parenthesis to be a valid union definition:
 ```py
 def Some_Union : (tag0 type0|tag1 type1|...);
 ```
@@ -2000,7 +2050,7 @@ def Numbers : (i32+|f32+|Vec2+); # shortcut for (i32 i32|f32 f32|Vec2 Vec2)
 ```
 
 ### Tags numeric representation
-Unions tags are just integers IDs. The first tag defaults to 0 and each subsequent tag incremeant by 1 automatically.
+Unions tags are just integers IDs. The first tag defaults to 0 and each subsequent tag increment by 1 automatically.
 
 It's possible to set the tag value manually:
 ```py
@@ -2017,7 +2067,7 @@ And tags with different underlying types cannot have the same numeric value:
 def Some_Union : (Tag0 = 0 i32|Tag1 = 0 u32); # error: 'Tag0' and 'Tag1' share same tag number, but have diffent underlying types
 ```
 
-Also, after setting a tag numeric value manually subsequent tags still have the value incremeanted manually:
+Also, after setting a tag numeric value manually subsequent tags still have the value incremented manually:
 ```py
 def Some_Union : (Tag0 i32|Tag1 = 3 u32|Tag2 f32); # Tag0 == 0, Tag1 == 3, Tag2 == 4
 ```
@@ -2052,7 +2102,7 @@ def string = Some_Union.String; # 'string' is of type 'Some_Union.String'
 def vector = Some_Union.Vector; # 'vector' is of type 'Some_Union.Vector'
 ```
 
-Then you simply just pass the appropriete values or initializators:
+Then you simply just pass the appropriate values or initializators:
 ```py
 def Vec2 : (x, y = f32);
 def Some_Union : (Number i32|String str|Vector Vec2);
@@ -2061,79 +2111,276 @@ def string = Some_Union.String "10";
 def vector = Some_Union.Vector Vec2(10.0, 0.10);
 ```
 
-Because each union tag already holds the proper type, you can initialize a struct without the explicit type:
+Because each union tag already holds the proper type, you can [initialize a struct without the explicit type](#Implicit-struct-name-on-instantiation):
 ```py
 def Vec2 : (x, y = f32);
 def Some_Union : (Number i32|String str|Vector Vec2);
 def vector = Some_Union.Vector(10.0, 0.10); # valid
 ```
 
-You can then treat the variable as if it was a normal instance of that type:
+Keep in mind that the actual type of the union isn't `<union>.<tag>`, just `<union>`. The tag just signals to the compiler how the variable data and type checking should be treated. So a explicitly typed union would be:
+```py
+def Vec2 : (x, y = f32);
+def Some_Union : (Number i32|String str|Vector Vec2);
+def vector = Some_Union Some_Union.Vector(1.0, 2.0); # valid
+```
+
+The default value of an union is always the first declared tag (the tag numeric value does not matter):
+```py
+def Some_Union : (Number i32|String str);
+def num0 = Some_Union;
+def num1 = Some_Union.Number;
+```
+
+In the code above, both `num0` and `num1` have `Some_Union.Number` as their tag numeric representation. 
+
+If the variable already has the proper union type you can use `.<tag>` as a shortcut:
+```py
+def Some_Union : (Number i32|String str);
+def foo = Some_Union;
+foo = .String "hello";
+```
+
+### Accessing union data
+To access the data of an union use `^` as a suffix:
 ```py
 def Vec2 : (x, y = f32);
 def Some_Union : (Number i32|String str|Vector Vec2);
 def vector = Some_Union.Vector(1.0, 2.0); # valid
-def x = vector.x; # valid
+def number = Some_Union.Number 10;
+def x = vector^.x; # valid, x == 1.0
+def a = number^; # valid, a == 10
 ```
 
-Keep in mind that the actual type of the union isn't `<union>.<tag>`, just `<union>`. The tag just signals to the compiler how the variable data and type checking should be treated.
+The `^` suffix can only be used when it's absolutely clear to the compiler what's the tag of the giving union. If it isn't use a `switch` or `if` expression:
+```py
+switch some_union (
+  .Int   => some_union^ = 10,
+  .Float => some_union^ = 10.0,
+);
+if some_union == .Float => some_union^ *= 0.5;
+```
 
-### Changing a tag from an union
-Work in progress...
+### Union mutability
+The mutability of unions works in [the same way as the rest of the variables](#Variable-mutability). If you wish to change a value from a type within an union use the `mut` attribute as always:
+```py
+def Vec2 : (x, y = f32);
+def Some_Union : (Number i32|String str|Vector Vec2);
+def vector = mut Some_Union.Vector(1.0, 2.0); # valid
+vector^.x = 10!;
+```
 
-### Unions mutability
-Work in progress...
+Mutable unions also permit you to directly change its tag. Keep in mind that when the tag is changed the data is also reset to the proper defaults of the new tag:
+```py
+def vector = mut Some_Union.Vector(1.0, 2.0); # valid
+vector = .String; # Vector is initialized to the default value, in this case an empty string ""
+vector = .String "hi"; # You can also provide an value along with the tag. 'vector' is equal to the "hi" string
+```
+
+### Tags comparability
+You can compare tags with other tags:
+```py
+def vector = mut Some_Union.Vector(1.0, 2.0); # valid
+vector == Some_Union.Vector; # true
+```
+
+This is not a data comparison, it just compares the tags numeric values.
+
+The union name can also be omitted here:
+```py
+def vector = mut Some_Union.Vector(1.0, 2.0); # valid
+vector == .Vector; # valid
+```
+
+### Getting the tag numeric value
+If a tag numeric value is needed use `^` as a prefix:
+```py
+def Some_Union : (Number i32|String str|Vector Vec2);
+def vector = mut Some_Union.Vector(1.0, 2.0); # valid
+def tag_val = ^vector; # in this case, tag_val == 2
+```
+
+It can be used directly from union tags:
+```py
+def Some_Union : (Number i32|String str|Vector Vec2);
+def tag_val = ^Some_Union.String; # in this case, tag_val == 1
+```
+
+You can use a specific variant to get the union tag number, but it's not necessary:
+```py
+def Some_Union : (T : number|Number T|String str|Vector Vec2);
+def tag_val0 = ^Some_Union(i32).String; # valid, tag_val0 == 0
+def tag_val1 = ^Some_Union.String; # valid, tag_val1 == 0
+```
+
+The inferred type based on a tag numeric value is equal to the [tag numeric value type](#Tags-numeric-representation). But if the type is not enforced tags numeric values can be passed into any integer that can hold the specified range:
+```py
+def Some_Union0 : (Number i32|String str|Vector Vec2);
+def tag_val0 = ^Some_Union0.String; # tag_val0 type is u8, tag_val == 1
+def tag_val1 = i32 ^Some_Union0.String; # tag_val1 type is i32, tag_val == 1
+def Some_Union1 : (Number i32|String str|Vector Vec2) i32;
+def tag_val2 = ^Some_Union1.String; # tag_val2 type is i32, tag_val == 1
+def tag_val3 = u8 ^Some_Union1.String; # error: tags from 'Some_Union1' are i32
+```
+
+Note that the union name type can't be omitted for getting tags because there aren't a way to know which union you're referencing:
+```py
+def Some_Union0 : (Number f32|String str|Vector Vec2);
+def Some_Union1 : (Number i32|String str|Vector Vec2);
+def tag_val = ^.Number; # error: missing union name after '^'
+```
 
 ### Untyped unions
-Work in progress...
+You can set the underlying type of a tag to be `void`, this actually indicates that no memory will be held by that tag. If only `void` types are provided the union only holds enough data for the tag numeric value:
+```py
+def Color : (Red void|Green void|Blue void);
+def color = mut Color;
+color = .Red;
+```
 
-### Unions constant members
-Work in progress...
+You actually can leave out the tag type and it'll default to void ([this is similar to the function return type](#Void-return-type)):
+```py
+def Color : (Red|Green|Blue);
+def color = mut Color;
+color = .Red;
+```
+
+This is equivalent to enums in other languages.
+
+### Passing unions as parameters
+You can pass unions to arguments as expected:
+```py
+def Some_Union : (Int i32|Float f32|String str);
+def do_something : (a = Some_Union) => ...;
+def foo = Some_Union.Int 10;
+def bar = Some_Union.Float 10.0;
+def baz = Some_Union.String "10";
+do_something(foo); # valid
+do_something(bar); # valid
+do_something(baz); # valid
+```
+
+But if you want, you can determine that a function can only accept one specific union tag:
+```py
+def Some_Union : (Int i32|Float f32);
+def do_something : (a = Some_Union.Int) => ...;
+def foo = Some_Union.Int 10;
+def bar = Some_Union.Float 10.0;
+do_something(foo); # valid
+do_something(bar); # error: passed 'Some_Union.Float', but expected 'Some_Union.Int'
+do_something(baz); # error: passed 'Some_Union.String', but expected 'Some_Union.Int'
+```
+
+With this approach you're still passing an union type, not just the tag value.
+
+It's also possible to expected just more than one specific tag with a `|`:
+```py
+def Some_Union : (Int i32|Float f32);
+def do_something : (a = Some_Union.Int|.Float) => ...; # 'a = Some_Union.Int|Some_Union.Float' is also valid
+def foo = Some_Union.Int 10;
+def bar = Some_Union.Float 10.0;
+do_something(foo); # valid
+do_something(bar); # valid
+do_something(baz); # error: passed 'Some_Union.String', but expected 'Some_Union.Int'
+```
+
+It's not possible to have a variable be from two different distinct union types using this though:
+```py
+def Some_Union0 : (Int i32|Float f32);
+def Some_Union1 : (Int i32|Float f32);
+def do_something : (a = Some_Union0.Int|Some_Union1.Float) => ...; # invalid
+```
+
+Keep in mind that using specific tagged functions is only possible when it's clear to the compiler which tag that union has. Similar to [the '^' suffix](#Accessing-union-data).
+
+### Constant tags
+[Similar to structs constant members](#Constant-members), unions can have constant tags. They follow the same rules and are defined in the same way as constant members. The only definition difference is the separator, it's a pipe instead of a comma:
+```py
+def Some_Union : (T : type|N : usize|Type T|Buffer [N]T|);
+```
+
+To instantiate an union with a constant tag you actually use an initializer on the union type itself. These are union variants:
+```py
+def Some_Union : (T : type|N : usize|Type T|Buffer [N]T|);
+def type_i32 = Some_Union(i32, 3).Type 10;
+def buff_i32 = Some_Union(i32, 3).Buffer [1, 2, 3];
+def type_f32 = Some_Union(f32, 3).Type 10;
+def buff_f32 = Some_Union(f32, 3).Buffer [1, 2, 3];
+```
+
+Constant members of unions can't really accept `imp`. The reason for this is because not all constant tags may be used on all tag types. 
+
+An union can only accept struct variants, so if being generic is a desired factor the union will also have to accept the required constant members:
+```py
+def Vec2 : (T : imp number, x, y = T);
+def Some_Union : (T : number|Int i32|Vec Vec2(T)|);
+```
 
 ### Unions static constants
-Work in progress...
+Unions can have [static constants](#Static-constants), and they work exactly like the struct ones:
+```py
+def Some_Union : (Int i32|Float f32);
+def Some_Union.ZERO : 0;
+def a = Some_Union.ZERO;
+```
+
+You can also have static constants on specific tags:
+```py
+def Some_Union : (Int i32|Float f32);
+def Some_Union.Int.ZERO : 0;
+def Some_Union.Float.ZERO : 0.0;
+def a = Some_Union.Int.ZERO;
+def b = Some_Union.Float.ZERO;
+```
+
+[Methods](#Methods) also behave the same:
+```py
+def Some_Union : (Int i32|Float f32);
+def Some_Union.do_something : (self = Some_Union) =>...;
+def a = Some_Union.Int 10;
+def b = Some_Union.Float 10.0;
+a.do_something();
+b.do_something();
+```
+
+Methods for unions have to have a pointer, view or value to the type of the specified union. It can't be specific tags for the method call to work.
+
+And they can also be bound to specific tags:
+```py
+def Some_Union : (Int i32|Float f32);
+def Some_Union.Int.do_something : (self = Some_Union.Int) =>...;
+def a = Some_Union.Int 10;
+def b = Some_Union.Float 10.0;
+a.do_something();
+b.do_something(); # error: 'b' has no method 'do_something'
+```
+
+Methods for specific union tags have to have a pointer, view or value to that specific tag only.
+
+Specific tag methods have priority over whole union methods:
+```py
+def Some_Union : (Int i32|Float f32);
+def Some_Union.do_something : (self = Some_Union) =>...;
+def Some_Union.Int.do_something : (self = Some_Union.Int) =>...;
+def a = Some_Union.Int 10;
+def b = Some_Union.Float 10.0;
+a.do_something(); # Some_Union.Int.do_something(b);
+b.do_something(); # Some_Union.do_something(b);
+```
 
 ### Untagged unions
-Work in progress...
-
-Tagged unions, not raw unions.
-
-Union definition syntax:
+You can mark the enforced type of the numeric value of a union to be `void`. If that's the case you simply cannot define tags, only the types directly:
 ```py
-def something : () => ;
-def Some_Union : tag0 type0|tag1 type1|tag2 type2|...;
+def Some_Union : (i32|f32) void;
 ```
 
-Examples:
+The `^` prefix and suffix will not work, this union will behave like a C union:
 ```py
-def Some_Struct : (a, b = f32);
-
-def Result : (T, E : type|Ok T|Err E);
-def Some_Union : i32|f32|u64;
-def Some_Invalid_Union : i32|i32|f32|u64; # error: repeating type
-def Some_Complex_Union : i32|Some_Struct|Some_Union_Defined_Struct(x, y = i32)|Some_Union_Defined_Tuple(i32, i32);
-def Some_Invalid_Complex_Union : i32|Some_Struct|(x, y = i32)|(i32, i32); # error: structs and tuples defined on unions must have names
-def Some_Union_With_Unions : i32|Some_Union_Defined_Union(u32|f64);
-def Some_Invalid_Union_With_Unions : i32|(u32|f64); # error: unions defined on unions also must have names
-def Some_Enum_Like_Union : Value0()|Value1()|Value2(); # empty structs are valid only on unions for enum-like behaviour
-
-def something = Some_Complex_Union.Some_Union_Defined_Struct(10, 20); # something is of Some_Complex_Union type tagged as Some_Union_Defined_Struct
-def some_struct = Some_Union(Some_Struct(1.5, 2.3));
-def some_struct2 = Some_Union.Some_Struct(1.5, 2.3); # same as previous definition, but using the sub type of an union directly
-def some_union = Some_Union(0); # some_union is of Some_Union type tagged as i32 (first match)
-def some_union = Some_Union.u64(0); # some_union is of Some_Union type tagged as u64 (explicit)
-def some_enum = Some_Enum_Like_Union.Value0(); # some_enum is of type Some_Enum_Like_Union tagged as Value0
+def Vec3 : ((x, y, z = f32)|(r, g, b = f32)) void;
+def foo = mut Vec3;
+foo.x = 10;
+a = foo.r; # a == 10
 ```
-
-To get the amount of tags in a union use the builtin `len()`. Like array lengths union tags amount are known at compile time:
-```py
-def Week : Monday()|Tuesday()|wednesday()|Thursday()|Friday();
-def week_amount = @len(Week); # week_amount 5
-```
-
-TODO: union for indexing arrays
-
-Work in progress...
 
 ## The meta type
 A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
@@ -2272,7 +2519,7 @@ Named structs, unions, tuples and so on will have a proper name in the sub-type.
 
 Unnamed custom types will have the type 
 
-## Control flow (if, else and loops)
+## Control flow (if, else, switch and loops)
 Work in progress...
 ### if def
 Work in progress...
@@ -2280,9 +2527,6 @@ Work in progress...
 Work in progress...
 
 ## Ranges and iterators
-Work in progress...
-
-## Match expressions
 Work in progress...
 
 ## Options
@@ -2316,17 +2560,19 @@ Work in progress...
 | 1          | func()   | Regular function call                      | Left to Right |
 | 1          | func x   | One argument function call                 | Left to Right |
 | 1          | x func y | Infix function call                        | Left to Right |
-| 1          | ++       | Suffix incremeant                          | Left to Right |
-| 1          | --       | Suffix Decremeant                          | Left to Right |
+| 1          | ++       | Suffix increment                           | Left to Right |
+| 1          | --       | Suffix decrement                           | Left to Right |
 | 1          | []       | Indexing                                   | Left to Right |
 | 1          | .        | Member access                              | Left to Right |
 | 1          | Struct() | Struct literal                             | Left to Right |
-| 2          | ++       | Prefix incremeant                          | Right to Left |
-| 2          | --       | Prefix incremeant                          | Right to Left |
+| 2          | ++       | Prefix increment                           | Right to Left |
+| 2          | --       | Prefix decrement                           | Right to Left |
 | 2          | +        | Unary plus                                 | Right to Left |
 | 2          | -        | Unary minus                                | Right to Left |
 | 2          | !        | Logical not                                | Right to Left |
 | 2          | ~        | Bitwise not                                | Right to Left |
+| 2          | ^        | Get union value (suffix)                   | Left to Right |
+| 2          | ^        | Get union tag number (prefix)              | Right to Left |
 | 2          | *        | Pointer dereferencing                      | Right to Left |
 | 2          | &        | Address of                                 | Right to Left |
 | 2          | &mut     | Mutable address of                         | Right to Left |
