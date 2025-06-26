@@ -165,7 +165,7 @@ def five : () i32 => {
 };
 ```
 
-The `brk` statement can be nested:
+The `brk` expression can be nested:
 ```py
 def foo : () => {
   {
@@ -179,7 +179,9 @@ def foo : () => {
 };
 ```
 
-It can be nested how many times you want infact:
+This isn't a special rule, `brk` is an expression and because `brk` accepts an expression this is achieved for free.
+
+Because of this you can nest it infinitely:
 ```py
 def foo : () => {
   {
@@ -199,7 +201,29 @@ def foo : () => {
 };
 ```
 
+And of course you can add non-`brk` expressions to it. Again this is not special semantics, it's all the same thing:
+```py
+def foo : () => {
+  def x = {
+    {
+      brk brk 10;
+      do_stuff(); # not executed
+    };
+    do_something(); # not executed
+  };
+  use(x); # executed
+};
+```
+
 The verbosity of too many nested `brk`s is intentional. It indicates that you're doing something wrong in your scope management and your function should be simplified or refactored. Therefore multiple nested `brk`s as well as multiple nested expression blocks aren't recommended.
+
+And of course, `brk` and `ret` only works inside expression-blocks.
+```py
+def fo : () i32 => ret 10; # error: 'ret' outside expression-block
+```
+
+### Defer expression
+
 
 ### Variable and constant arguments
 Most functions arguments are variables, so they can be defined in the same way (see more on [the variables section](#Variable-definitions)):
@@ -308,6 +332,13 @@ def type_of : @(T : imp type, _ = T) type => T;
 def a = u32;
 def b = @type_of(a) 10; # valid
 ```
+
+A compile-time function can call another compile-time function inside of it. Compile-time functions aren't some macro-like expansion thing, they literally run at compile-time. So calling a compile-time function inside of a compile-time function have the same behavior of calling a normal function. With that recursion is fine:
+```py
+def comp_fac : @(x : u32) u32 => x == 0 ? 1 : x * @comp_fac(x-1);
+```
+
+The compile-time phase of the compiler is an interpreter of Stark byte-code. That's why this kind of stuff is fine.
 
 ### Generic functions
 With constant arguments you can make generic functions using the `type` type:
@@ -692,6 +723,13 @@ def x = mut 10;
 x = 20; # valid, x is mutable
 def y = mut i32;
 y = 10; # valid, y is mutable
+```
+
+### Variable assignment
+A variable assignment is also an expression, it returns `void`. But if you wrap the assignment in parenthesis then it actually returns the value of the assigned variable after it's definition:
+```py
+def x = mut i32 get_x();
+def y = (x += 1);
 ```
 
 ### Unused variables and the '_' identifier
@@ -1176,6 +1214,8 @@ You can also initialize arrays to garbage:
 def arr = [3]u64 ---;
 ```
 
+Arrays can have 0 length. The array will actually occupy 0 bytes, in other words, it does not exists in memory.
+
 ### Array mutability
 Because arrays actually store the data for modifying the values you just need to set the array as `mut`:
 ```py
@@ -1287,8 +1327,8 @@ Slices are views into arrays. They consist of a length and a pointer.
 
 To slice an an array use a [range](#Ranges-and-iterators) inside the index `[]`:
 ```py
-def arr = [1, 2, 3, 4, 5];
-def slice = arr[1..3]; # slice[0] == 2, slice[1] == 3, slice[2] == 4, len(slice) == 4
+def arr = [6, 5, 4, 3, 2, 1];
+def slice = arr[2..4]; # slice[0] == 4, slice[1] == 3, slice[2] == 2, len(slice) == 3
 ```
 
 If you want to make a slice from the beginning to the end of the array use an empty range:
@@ -1297,11 +1337,11 @@ def arr = [1, 2, 3];
 def slice = arr[..];
 ```
 
-Or just set only the starting index or only the amount:
+Or just set only the starting index or ending index:
 ```py
 def arr = [1, 2, 3, 4, 5, 6];
 def slice0 = arr[..3]; # 0 starting index is implied
-def slice1 = arr[2..]; # @len(arr)-2 amount is implied
+def slice1 = arr[2..]; # @len(arr)-1 ending index is implied
 ```
 
 You can use variables when slicing, but keep in mind that does have some runtime overhead for bounds checking:
@@ -2387,9 +2427,7 @@ A `meta` is a builtin [union](#Unions) type that represents a node from the Star
 
 It is a [compile-time-only type](#Compile-time-only-primitive-types) and it follows the same rules as the primitive ones.
 
-All the variants of `meta` have only one member in it: An [optional](#Options) `meta` slice named `child`.
-
-To see an in-depth list of all the types supported by an `meta` see: [Meta types](#Types-of-metas).
+To see an in-depth list of all tags held by a `meta` see: [Meta types](#Types-of-metas).
 
 ### Meta literals
 To create a `meta` literal use the `$code` keyword followed by an identifier. When the specified identifier is reached the meta literal ends:
@@ -2411,7 +2449,7 @@ some_code : $code code_end
 code_end;
 ```
 
-The underlying type of the generated `meta` is `meta.root`.
+The tag of the generated `meta` is `meta.root`.
 
 To put all this meta-code inside your actual source code is very simple, use the `@` operator:
 ```py
@@ -2429,7 +2467,7 @@ define_ten2 : $code code_end def TEN2 : $TEN; code_end;
 ```
 
 ### meta.iden and meta.expr
-The `meta.iden` sub-struct from `meta` can accept an identifier directly:
+The `meta.iden` tag from `meta` can accept an identifier directly:
 ```py
 an_actual_identifier : meta.iden some_random_identifier;
 ```
@@ -2443,7 +2481,7 @@ def @an_actual_identifier : 20; # 'some_random_identifier' is defined here with 
 The `meta.expr`, similarly to `meta.iden`, can accept expressions directly on it's definition:
 ```py
 def an_actual_expression : meta.expr 3 + 4;
-def something : () i32 => @an_actual_expression; # 'something' returns 7
+def something : () i32 => @an_actual_expression; # 'something' returns 3 + 4
 ```
 
 ### Metaprogramming with metas
@@ -2454,7 +2492,7 @@ def return_code : @() meta => $code end
 end;
 ```
 
-Using the `@` operator on a function that returns a `meta` will not only call the function but inject the `meta` AST into the main AST:
+Using the `@` operator on a function that returns a `meta` will not only call the function, but also inject the `meta` AST into the main AST:
 ```py
 def gen_square_fn : @() meta => $code end
   def square(T : number, a = T) T => a*a;
@@ -2471,10 +2509,25 @@ end;
 ```
 
 ### Types of metas
-Work in progress...
+This is the meta definition:
+```py
+def meta : (
+    root   (child = *meta)     # Root of an AST
+  | expr   (child = *meta)     # Expression
+  | iden   (name = str)        # Identifier
+  | int    (value = str)       # Integer literal
+  | float  (value = str)       # Floating point literal
+  | string (value = str)       # String literal
+  | add    (lhs, rhs = *meta)  # Addition
+  | sub    (lhs, rhs = *meta)  # Subtraction
+  | mul    (lhs, rhs = *meta)  # Multiplication
+  | div    (lhs, rhs = *meta)  # Division
+  Work in progress...
+);
+```
 
 ## The anyrt type
-`anyrt` is another builtin union. It stands for 'any runtime', and as it implies, you can pass any value to it at runtime and it'll hold type information plus a immutable pointer to the data:
+`anyrt` is another builtin union. It stands for 'any runtime', and as it implies, you can pass any value to it at runtime and it'll hold type information plus an immutable pointer to the data:
 ```py
 def a = 10;
 def b = "hello";
@@ -2503,35 +2556,317 @@ def x = mut anyrt 0; # error: mutable anyrt
 ```
 
 ### Getting the data from an anyrt
-Every `anyrt` sub-type have `.data` member field, it's a pointer to the correct type:
+Every `anyrt` tag are structs, and they have a `.data` member field. That field is a pointer to the correct type:
 ```py
 def x = anyrt 10;
 def x_val = *x.data; # x_val is now defined as an i32 with value 10
 def x_wrong_val = f32 *x.data; # error: passing wrong type
 ```
 
-### Anyrt sub-types
-`anyrt` is actually specific to every Stark project. It's start empty with no sub-types, and at compile-time it'll add correct sub-types as necessary.
+### Anyrt tags
+`anyrt` is actually specific to every Stark project. It already holds many tags by default, but every time a custom type is used as the value of an `anyrt` variable, the type will be added to the `anyrt` union, or a sub-union of `anyrt`, as a tag.
 
-Every sub-type start with an underscore, so an `i32` sub-type will be `_i32`, a `str` will be `_str`.
+This are the primitive tags:
+```py
+  i8 (data = *i8)
+| u8 (data = *u8)
+| u16 (data = *u16)
+| i16 (data = *i16)
+| u32 (data = *u32)
+| i32 (data = *i32)
+| u64 (data = *u64)
+| i64 (data = *i64)
+| f32 (data = *f32)
+| f64 (data = *f64)
+| usize (data = *usize)
+| isize (data = *isize)
+| str (data = *str)
+| cstr (data = *cstr)
+| bool (data = *bool)
+| uchar (data = *uchar)
+| achar (data = *achar)
+```
 
-Named structs, unions, tuples and so on will have a proper name in the sub-type. For example, an struct named `Some_Struct` will have an `anyrt` sub-type of `_Some_Struct`.
+Struct, union, tuple, array, slice, pointer and view tags are actually their own unions.
 
-Unnamed custom types will have the type 
+Every tag from the `struct` tag of `anyrt` follow this layout:
+```py
+(
+  data = *void,
+  name = str,
+  members = [..](
+    name = str,
+    info = anyrt,
+  ),
+);
+```
+
+Every tag from the `union` tag of `anyrt` follow this layout:
+```py
+(
+  data = *void,
+  name = str,
+  tags = [..](
+    id = (u8+|i8+|u16+|i16+|u32+|i32+|u64+|i64+),
+    name = str,
+    info = str,
+  ),
+);
+```
+
+Every tag from the `array` tag of `anyrt` follow this layout:
+```py
+(
+  data = *void,
+  info = *anyrt,
+  length = usize,
+);
+```
+
+Every tag from the `slice` tag of `anyrt` follow this layout:
+```py
+(
+  data = *void,
+  info = *anyrt,
+  length = usize,
+);
+```
+
+Every tag from the `pointer` tag of `anyrt` follow this layout:
+```py
+(
+  data = **void,
+);
+```
+
+Every tag from the `view` tag of `anyrt` follow this layout:
+```py
+(
+  data = **void,
+);
+```
+
+The `data` field of every tag will obviously be a pointer to the correct type instead of `void`. For the `array` and `slice` tags it'll be a slice to the corret type instead of a pointer. And for the `view` tag it'll be views instead of pointers.
+
+Actually the above struct layouts are also tags of `anyrt`, they're called `struct_generic`, `union_generic`, `tuple_generic`, `array_generic`, `slice_generic`, `pointer_generic` and `view_generic`. These tags are used for when you want to account to any type of struct, union or tuple.
+
+Distinct aliases are added to `anyrt` directly.
+
+The tag name of any named type will be the type name itself.
+
+There is a `unnamed` tag, this tag is an union. This union is basically an `anyrt` in itself, every sub-union of `anyrt` has an equivalent inside `unnamed`, every unnamed custom type goes inside `unnamed`, the name of each tag will be `t` +  an arbitrary id.
 
 ## Control flow (if, else, switch and loops)
-Work in progress...
-### if def
-Work in progress...
+### If and else
+As everything else in the language, `if`s are expressions. To make an if expression use the `if` keyword, followed by a boolean condition, then the body assignment operator `=>` and finally an expression:
+```py
+if <condition> => <expr>;
+```
+
+After the `if` expression you can optionally have an `else` expression. It's similar to the `if` one, except that the condition is optional:
+```py
+if x == 10  => do_something();
+else x < 10 => do_something_else();
+else        => do_fallback();
+```
+
+The expression inside the `if` body will be returned. But returning a value from an `if` expression only works, if it's followed by an conditionless `else` expression:
+```py
+def y = if x == 10 => 10; else => 9;
+def z = if x == 10 => 10; else x == 9 => 9; # error: if/else chain that returns expression missing a conditionless else
+```
+
+And all expressions from the `if`/`else` chain must return the same type:
+```py
+def y = if x == 10 => 10; else => 9.0; # error: if/else chain that returns different types
+```
+
+And of course, if a `if`/`else` chain returns something, it needs to be handled:
+```py
+if x == 10 => 10; else => 9; # error: unhandled expression
+```
+
+The ternary operator is also supported, they are exactly the same as an `if` and conditionless `else` that return an expression. The expression of ternary operations can't return `void`:
+```py
+def _ = x == 10 ? 10 : 9;
+```
+
+So the ternary operator is in reality just sugar for `if`/`else`.
+
+#### Assigning on if
+As it's known, [variable assignments](#Variable-assignment) wrapped around parenthesis return the variable value after it's assignment. This becomes really useful on if expressions:
+```py
+def x = mut i32;
+if (x = get_x()) == 10 => do_stuff();
+```
+
+#### 'if def'
+It's very commom to do an operation put the result in a variable and only use said variable if it's in certain coditions. Use an `if def` to make the variable be visible only on the `if`/`else` chain. The assignment rule is still applicable, so it's needed to wrap it around parenthesis:
+```py
+if def (x = i32 get()) == 10 && x < 10 => ...;
+else x == 9                            => ...;
+
+if def (x = bool get()) => ...;
+else                    => ...;
+```
+
+You can also use `def` on `else`s with conditions:
+```py
+if something => ...;
+else def (x = get_something()) == 10 => ...;
+else x == 9 => ...; # 'x' now becomes avaiable for subsequent elses
+```
+
+Shadowing in `if`/`else` with `def` isn't allowed:
+```py
+if   def (x = get_this()) == 10 => ...;
+else def (x = get_that()) == 9  => ...; # error: 'x' is already defined
+```
+
+Do an assignment without `def` for this is needed:
+```py
+if def (x = get_this()) == 10 => ...;
+else   (x = get_that()) == 9  => ...; # valid
+```
+
+### Switch expression
+An easier way then a `if`/`else` chain to check if a value is equal to some specific case, is the `switch` expression:
+```py
+switch <value> (
+  <case> => do_this(),
+  <case> => do_that(),
+);
+```
+
+The equivalent of a conditionless else in a switch expression is just the `_` identifier:
+```py
+switch <value> (
+  <case> => do_this(),
+  <case> => do_that(),
+  _      => do_fallback(),
+);
+```
+
+The `<value>` must be a value that can be compared.
+
+The `<case>` must be a value that the `<value>` can be compared to.
+
+A `switch` expression follow to returning values as an `if`/`else` chain:
+```py
+def _ = switch some_i32 (10 => 10, _    => 0); # valid
+def _ = switch some_i32 (10 => 10, 0..9 => 9); # error: switch that returns expression missing a '_' case
+def _ = switch some_i32 (10 => 10, _    => 9.0); # error: switch that returns different types
+switch some_i32 (x == 10 => 10, _ = 9); # error: unhandled expression
+```
+
+You can have multiple cases assigned to the same body:
+```py
+switch some_i32 (
+  0, 1, 2 => do_something(),
+  _       =>               ,
+);
+```
+
+In C the cases fallthrough each other automatically, in Stark they don't. If the fallthrough behavior is desired, use the `&&` operator before the next case: 
+```py
+switch some_i32 (
+  0 => do_something(), &&
+  1 => do_something_extra(),
+  2, 3 => do_something_new(), &&
+  4, 5 => do_something_extra_new(),
+);
+```
+
+#### Switch on unions
+A switch can accept an union because them can be compared with tags. The difference with a `switch` on unions is that all tags must be handled:
+```py
+def Color : (Red|Green|Blue);
+def col = Color;
+switch col (
+  Red => do_red(),
+  Green => do_green(),
+); # error: unhandled 'Blue' tag on an union switch
+```
+
+You can use the `_` case to explicitly say that you don't want to handle does cases:
+```py
+def Color : (Red|Green|Blue);
+def col = Color;
+switch col (
+  Red => do_red(),
+  Green => do_green(),
+  _ =>;
+); # valid
+```
+
+#### 'switch def'
+Similarly to the `if def`, switches can also have a `switch def` and it works the same way:
+```py
+switch def (x = get_i32()) (
+  0 => do_this_with_x(x);
+  1 => do_that_with_x(x);
+);
+```
+
+### While
+`while` loops are simple, the loop will run until it's condition is false:
+```py
+def something = true;
+while something => something = get_something();
+```
+
+Following the `switch` and `if`, `while` expression can also have `def`. This way they work like for loops in C:
+```py
+while def (i = 0) < 10 => i++;
+```
+
+The definition will only occur once, on next iterations only the current value of `i` will be used.
+
+You can use the `nxt` expression to go to the next iteration immediately: 
+```py
+while def (i = 0) < 10 => {
+  i++;
+  if i % 2 == 0 => nxt;
+  do_something();
+}
+```
+
+What the `nxt` expression does is it's just jumps to the end of the current expression-block. So it can only be used on loops and on expression blocks:
+```py
+while something => nxt; # error: 'nxt' outside of expression-block
+```
+
+Because `nxt` just jumps to the end of the expression block, all deferred expressions will be ran. So the correct way to simulate a for loop is:
+```py
+while def (i = 0) < 10 => {
+  defer i++;
+  if i % 2 == 0 => nxt;
+  do_something();
+}
+```
+
+`nxt` accepts an expression that will be ran at the next loop iteration:
+```py
+while def (i = 0) < 10 => {
+  defer i++;
+  if i % 2 == 0 => nxt i++; # i will incremeant by 1 in the next iteration
+  do_something();
+}
+```
+
+Because `nxt` is an expression it can be nested:
+```py
+while def (i = 0) < 10 => {
+  defer i++;
+  if i % 2 == 0 => nxt nxt; # skips two iterations
+  do_something();
+}
+```
+
 ### Compile-time control flows
 Work in progress...
 
 ## Ranges and iterators
-Work in progress...
-
-## Options
-Work in progress...
-### 'or', 'or_brk' and 'or_ret' keywords on options
 Work in progress...
 
 ## Tuples and error handling
@@ -2539,9 +2874,13 @@ Tuple definition syntax:
 ```py
 def Some_Union : (type0, type1, type2, ...);
 ```
-
 Work in progress...
 ### 'or', 'or_brk' and 'or_ret' keywords on tuples
+Work in progress...
+
+## Options
+Work in progress...
+### 'or', 'or_brk' and 'or_ret' keywords on options
 Work in progress...
 
 ## Type families
@@ -2623,16 +2962,17 @@ Work in progress...
 ## FFI
 Work in progress...
 
-## Base module
+## Standard module
+### Base module
 Work in progress...
 
-## Mem module
+### Mem module
 NOTE: arena allocator and Arena_Array
 Work in progress...
 
-## I/O module
+### I/O module
 Work in progress...
 
-## OS module
+### OS module
 Work in progress...
 
