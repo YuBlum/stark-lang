@@ -882,6 +882,7 @@ None of the compile-time-only primitives have a size
 - __Any floating point:__ `anyf`
 - __Any string:__ `anys`
 - __Variable type:__ `type`
+- __Ranges:__ `range`
 
 This types are valid to use in constants and [ensured-compile-time functions](#Compile-time-functions).
 
@@ -914,6 +915,36 @@ C strings are similar, but they don't have a `bytes_length` field, they're ASCII
 Booleans are really simple, they just can have two states: `true` or `false`
 - `true`: Equivalent to 1 in integers
 - `false`: Equivalent to 0 in integers
+
+### Ranges
+Ranges are a range between two integers: the starting index and the ending index. The starting index always have to be less then or equal to the ending index:
+```py
+0..4;
+9..9;
+30..20; # error: starting index has to be smaller then or equal to the ending index
+```
+
+Ranges with the `..` syntax are inclusive. This means that the ending index is included if the ranges is used on a [for loop](#For-loop) or [slice](#Slices).
+
+For an exclusive range use `..<`. Exclusive ranges can't haver the starting index and ending index being the same value:
+```py
+```py
+0..<4;
+9..<9; # error: starting index has to be smaller then the ending index
+30..<20; # error: starting index has to be smaller then the ending index
+```
+
+Ranges can be assigned to constants:
+```py
+def RANGE : 2..5;
+```
+
+You can access the starting index and the ending index of range with the `.start` and `.end` members:
+```py
+def RANGE : 2..5;
+def starting_index = RANGE.start;
+def ending_index = RANGE.end;
+```
 
 ### Type inference by value table
 | Value            | Decription       | Constant inferred type              | Variable inferred type                                            |
@@ -959,6 +990,8 @@ Booleans are really simple, they just can have two states: `true` or `false`
 | \[1, 2, 3\]      | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
 | \[3\]21          | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
 | $code END END    | Code literal     | meta                                | meta (Compile-time only)                                          |
+| 1..9             | Range literal    | range                               | range (Compile-time only)                                         |
+| 1..<9            | Range literal    | range                               | range (Compile-time only)                                         |
 
 __Caveats and Notes:__
 * Passing constants with `anyi` type into mismatched integers will cause an error. E.g. constant with value 1234 passed to an `u8`
@@ -1402,7 +1435,7 @@ foo(nums0, nums2); # invalid
 ## Slices
 Slices are views into arrays. They consist of a length and a pointer.
 
-To slice an an array use a [range](#Ranges-and-iterators) inside the index `[]`:
+To slice an an array use a [range](#Ranges) inside the index `[]`:
 ```py
 def arr = [6, 5, 4, 3, 2, 1];
 def slice = arr[2..4]; # slice[0] == 4, slice[1] == 3, slice[2] == 2, len(slice) == 3
@@ -2941,7 +2974,7 @@ while def (i = 0) < 10 => {
 ```
 
 ### For loop
-`for` loops are loops that iterate over an array, a slice, [a range or an iterator](#Ranges-and-iterators).
+`for` loops are loops that iterate over an [array](#Arrays), a [slice](#Slices), a [range](#Ranges) or an [iterator](#Iterators).
 
 Each iteration of a `for` loop gives you a value.
 
@@ -2963,6 +2996,19 @@ for i = mut in 0..9 => {
 }
 ```
 
+Mixing `mut` and the specified type is possible:
+```py
+for i = mut i8 in 0..9 => {
+  i *= 2;
+  println("%", [i]);
+}
+```
+
+You can mark the range as `rev` for reverse iteration:
+```py
+for i in rev 0..9 => println("%", [i]);
+```
+
 For arrays and slices the value is a tuple of the current iteration index + an element from the array/slice. This element behavies like a value, but it can actually be a reference. It's similar to how [function arguments](#Immutable-arguments-are-references) works:
 ```py
 def nums = [1, 2, 3];
@@ -2978,10 +3024,22 @@ for (i, n) = mut in nums => {
 };
 ```
 
+When an immutable pointer to an element is needed use `= *`:
+```py
+def nums = mut [1, 2, 3];
+for (i, n) = * in nums => println("&nums[%] = %", [i, n]);
+```
+
 You obviously only can do that on mutable arrays/slices:
 ```py
 def nums = [1, 2, 3];
 for (i, n) = mut in nums => ...; # error: nums is immutable
+```
+
+You can mark the array/slice as `rev` for reverse iteration:
+```py
+def nums = [1, 2, 3];
+for (i, n) in rev nums => println("nums[%] = %", [i, n]);
 ```
 
 `soa` arrays and slices can't be iterated through. Do this instead:
@@ -2992,10 +3050,42 @@ for i in 0..@len(pos) => do_stuff(pos[i].x);
 for i in 0..@len(pos) => do_stuff(pos[i].y);
 ```
 
-Iterators are similar to arrays/slices, the difference is that the element will always be a pointer:
+#### Iterators
+Iterators are just types that have the static constant `IS_ITER` set. It can be set to anything, but `true` is recommended for readability.
+
+An iterator has to have one or more of the methods: `next`, `mnext`, `rnext` and `rmnext`.
+- If it has `next` it'll work on normal `for` loops
+- if it has `mnext` it'll work on mutable `for` loops
+- if it has `rnext` it'll work on reversed `for` loops
+- if it has `rmnext` it'll work on reversed mutable `for` loops
+
+You don't need all of the methods to be implemented, just the ones you want to support.
+
+If it has `next` or `mnext` a `has_next` is mandatory. And if it has `rnext` or `rmnext` a `has_rnext` is mandatory.
+
+The `next`, `mnext`, `has_next`, `rnext`, `rmnext` and `has_rnext` methods should look like this:
+```py
+def Some_Iter.next : (self = *Some_Iter) (i64, *<some-type>) => ...;
+def Some_Iter.mnext : (self = *mut Some_Iter) (i64, *mut <some-type>) => ...;
+def Some_Iter.has_next : (self = *Some_Iter) bool => ...;
+def Some_Iter.rnext : (self = *Some_Iter) (i64, *<some-type>) => ...;
+def Some_Iter.rmnext : (self = *mut Some_Iter) (i64, *mut <some-type>) => ...;
+def Some_Iter.has_rnext : (self = *Some_Iter) bool => ...;
+```
+`<some-type>` can be of any type you want. The index type can be any type of integer that you want.
+
+If the `IS_ITER` static constant isn't set, you can add an `iter` method. This way you can still put a variable with that type on a for loop.
+
+The `iter` method should look like this:
+```py
+def Some_Type.iter : (self = *Some_Type) Some_Iter => ...;
+```
+
+Iterators on for loops are similar to arrays/slices, the difference is that the element will always be a pointer:
 ```py
 def nums = Linked_List.make[1, 2, 3];
 for (i, n) in nums => println("nums[%] = %", [i, *n]);
+for (i, n) in rev nums => println("nums[%] = %", [i, *n]);
 def nums_mut = mut Linked_List.make[1, 2, 3];
 for (i, n) = mut in nums_mut => {
   *n = 2;
@@ -3023,20 +3113,7 @@ else => ...;
 
 And all of them can be ran in module-scope.
 
-All values used inside the expression of each control flow have to be known at compile-time. Creating variables inside them is fine:
-```py
-@if SOMETHING => {
-  def a = get_val(); # valid
-  a++;
-};
-def a = get_val();
-@if SOMETHING => {
-  a++; # error: 'a' isn't a compile time value
-};
-```
-
-## Ranges and iterators
-Work in progress...
+All compile-time loops are unrolled. And all false `if`/`else`/`switch` conditions aren't included on the final code. They're still checked for errors though.
 
 ## Tuples and error handling
 Tuple definition syntax:
