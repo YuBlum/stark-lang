@@ -223,7 +223,57 @@ def fo : () i32 => ret 10; # error: 'ret' outside expression-block
 ```
 
 ### Defer expression
+You can defer an expression to the end of an expression-block using the `defer` keyword. The deferred expression will run even if you used `brk` or `ret` to early return from an expression-block:
+```py
+def main() => {
+  defer println("end");
+  println("start");
+};
+```
 
+The output will be:
+```
+start
+end
+```
+
+The order of multiple defers is based on their definitions. The last defined runs first:
+```py
+def main() => {
+  defer println("1");
+  defer println("2");
+  defer println("3");
+};
+```
+
+The output will be:
+```
+3
+2
+1
+```
+
+Because the expression returned by a `brk` runs on the outside block, if a `defer` is returned it'll be deferred to the outside expression-block:
+```py
+def main() => {
+  defer println("1");
+  {
+    defer println("2");
+    prinln("3");
+    brk defer println("4");
+  };
+  defer println("5");
+};
+```
+
+The output will be:
+```
+3
+2
+4
+5
+1
+```
 
 ### Variable and constant arguments
 Most functions arguments are variables, so they can be defined in the same way (see more on [the variables section](#Variable-definitions)):
@@ -459,15 +509,27 @@ foo(ptr); # valid
 foo(&a); # valid
 ```
 
-### Variadic arguments
-Work in progress...
-
 Also works for mutable pointers:
 ```py
 def foo : (x = &*mut Big_Struct) => x.something = get_something();
 def a = mut Big_Struct;
 foo(a); # valid
 ```
+
+### Variadic arguments
+There is no variadic arguments syntax. Most of the time you actually just want to pass a [slice](#Slices) of a single type:
+```py
+def print_nums : (nums = [..]i32) => for i in 0..<len(nums) => println("%", [1]);
+print_nums [1, 2, 3, 4];
+```
+
+But if you truly want to accept any type, for a custom printing function or something of that sort, use a slice of [anyrt](#The-anyrt-type). This is how `print` and `println` are implemented:
+```py
+def custom_print : (fmt = str, args = [..]anyrt) => ...;
+custom_print("% % % %", [1, 1.0, "1", [1, 1, 1]]);
+```
+
+But only use it if it's really necessary, `anyrt` costs more than just a specified slice.
 
 ### Functions are just values
 Functions are just values assigned to [constants](#Constants) with function types. So you can create an anonymous function using a function literal and call it directly:
@@ -729,7 +791,22 @@ y = 10; # valid, y is mutable
 A variable assignment is also an expression, it returns `void`. But if you wrap the assignment in parenthesis then it actually returns the value of the assigned variable after it's definition:
 ```py
 def x = mut i32 get_x();
-def y = (x += 1);
+def y = (x = x * 2 + 1);
+```
+
+All of the assignment operators works in that way, including `++` and `--`:
+```py
+def x = mut i32 get_x();
+def y = (x++);
+```
+
+The prefix `++` and `--` only differ with the parethesis assignment syntax:
+```py
+def x = mut get_x();
+x++; # exatcly the same as ++x
+++x; # exatcly the same as x++
+def y = (x++); # assign x to y then increment x
+def y = (++x); # increment x then assign x to y
 ```
 
 ### Unused variables and the '_' identifier
@@ -980,7 +1057,7 @@ def ptr = &mut something;
 def x = *(ptr + 1); # equivalent to nums[1]
 ```
 
-The only operations possible with pointers are: `+` and `-`
+The only operations possible with pointers are: `+`, `-`, `+=`, `-=`, `++` prefix and suffix, `--` prefix and suffix.
 
 ### Pointer definition
 Differently from other variable types, pointers cannot be initialized to nothing. This is because pointers don't have a default value and must always point to memory:
@@ -2808,14 +2885,14 @@ switch def (x = get_i32()) (
 );
 ```
 
-### While
+### While loop
 `while` loops are simple, the loop will run until it's condition is false:
 ```py
 def something = true;
 while something => something = get_something();
 ```
 
-Following the `switch` and `if`, `while` expression can also have `def`. This way they work like for loops in C:
+Following the `switch` and `if`, `while` expression can also have `def`. This way they work like C for loops:
 ```py
 while def (i = 0) < 10 => i++;
 ```
@@ -2836,7 +2913,7 @@ What the `nxt` expression does is it's just jumps to the end of the current expr
 while something => nxt; # error: 'nxt' outside of expression-block
 ```
 
-Because `nxt` just jumps to the end of the expression block, all deferred expressions will be ran. So the correct way to simulate a for loop is:
+Because `nxt` just jumps to the end of the expression block, all deferred expressions will be ran. So the correct way to do a C for loop is:
 ```py
 while def (i = 0) < 10 => {
   defer i++;
@@ -2863,8 +2940,100 @@ while def (i = 0) < 10 => {
 }
 ```
 
+### For loop
+`for` loops are loops that iterate over an array, a slice, [a range or an iterator](#Ranges-and-iterators).
+
+Each iteration of a `for` loop gives you a value.
+
+For ranges this value is an integer:
+```py
+for i in 0..9 => println("%", [i]);
+```
+
+By default is an i32, i64 or u64 depending on the values on the range. But you can specify exactly the type of integer that you want:
+```py
+for i = i8 in 0..9 => println("%", [i]);
+```
+
+As any variable, the iteration variable is immutable by default, but you can mark it as mutable:
+```py
+for i = mut in 0..9 => {
+  i *= 2;
+  println("%", [i]);
+}
+```
+
+For arrays and slices the value is a tuple of the current iteration index + an element from the array/slice. This element behavies like a value, but it can actually be a reference. It's similar to how [function arguments](#Immutable-arguments-are-references) works:
+```py
+def nums = [1, 2, 3];
+for (i, n) in nums => println("nums[%] = %", [i, n]);
+```
+
+It's also possible to mark the tuple as mutable, if that's the case the element will be a pointer:
+```py
+def nums = mut [1, 2, 3];
+for (i, n) = mut in nums => {
+  *n *= 2;
+  println("nums[%] = %", [i, *n]);
+};
+```
+
+You obviously only can do that on mutable arrays/slices:
+```py
+def nums = [1, 2, 3];
+for (i, n) = mut in nums => ...; # error: nums is immutable
+```
+
+`soa` arrays and slices can't be iterated through. Do this instead:
+```py
+def Vec2 : (x, y = f32);
+def pos = soa []Vec2 [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)];
+for i in 0..@len(pos) => do_stuff(pos[i].x);
+for i in 0..@len(pos) => do_stuff(pos[i].y);
+```
+
+Iterators are similar to arrays/slices, the difference is that the element will always be a pointer:
+```py
+def nums = Linked_List.make[1, 2, 3];
+for (i, n) in nums => println("nums[%] = %", [i, *n]);
+def nums_mut = mut Linked_List.make[1, 2, 3];
+for (i, n) = mut in nums_mut => {
+  *n = 2;
+  println("nums[%] = %", [i, *n]);
+};
+```
+
 ### Compile-time control flows
-Work in progress...
+Any control flow expression can be ran at compile-time, just prefix it with `@` and ensure to only use compile-time known values in it:
+```py
+@if SOME_CONST => ...;
+else SOME_OTHER => ...;
+else => ...;
+
+@switch SOME_NEW_CONST (
+  case0 => ...;
+  case1 => ...;
+  _ => ...;
+);
+
+@while SOME_CONST => ...;
+
+@for i in 0..9 => ...;
+```
+
+And all of them can be ran in module-scope.
+
+All values used inside the expression of each control flow have to be known at compile-time. Creating variables inside them is fine:
+```py
+@if SOMETHING => {
+  def a = get_val(); # valid
+  a++;
+};
+def a = get_val();
+@if SOMETHING => {
+  a++; # error: 'a' isn't a compile time value
+};
+```
 
 ## Ranges and iterators
 Work in progress...
