@@ -786,6 +786,16 @@ def z = y;
 y = 10; # invalid, 'y' is immutable
 ```
 
+If you're forward assigning with an `if` expression, the variable has to be assigned in a conditioless else:
+```py
+def x = u32;
+if something => x = 20;
+else => x = 0; # valid
+def y = u32;
+if something => y = 20;
+# error: 'y' may be unassigned
+```
+
 If mutability is a needed factor for a variable use the `mut` attribute on its definition:
 ```py
 def x = mut 10;
@@ -1118,7 +1128,7 @@ Because of that reason it's not possible to initialize pointers to garbage:
 def ptr = *i32 ---; # error: uninitialized pointer
 ```
 
-Often you actually don't need a pointer that points to nothing. Though, sometimes when interacting with the OS, C APIs or something of that sort a nullable pointer is needed. Use an [optinal pointer](#Options) on that occasions:
+Often you actually don't need a pointer that points to nothing. Though, sometimes when interacting with the OS, C APIs or something of that sort a nullable pointer is needed. Use an [optinal pointer](#Optional-pointer) on that occasions:
 ```py
 def ptr = ?*i32; # valid, initialized to 'null'
 ```
@@ -1624,6 +1634,12 @@ def a = foo.0;
 def b = foo.1;
 def c = foo.2;
 def (x, y, z) = Some_Tuple(4, 5.0, -6);
+```
+
+To define a tuple-like struct with only one member, a trailing comma is necessary:
+```py
+def Foo : (u32); # 'Foo' is an alias to 'u32'
+def Bar : (u32,); # 'Bar' is a struct with one unnamed member
 ```
 
 ### Struct typing
@@ -2164,8 +2180,13 @@ def Some_Struct : (a, b, c = i32);
 def Numbers : (Integer i32|Floating_Point f32|A_Tag Some_Struct|);
 ```
 
-And of course, direct struct literals are allowed:
+Infact to define an union with only one tag, trailing `|` are required:
+```py
+def Foo : (Integer i32); # Can be ambiguious in some cases
+def Bar : (Integer i32|); # Union with one tag
+```
 
+And of course, direct struct literals are allowed:
 ```py
 def Numbers : (Integer i32|Floating_Point f32|A_Tag(a, b, c = i32)|);
 ```
@@ -3252,10 +3273,33 @@ And all of them can be ran in module-scope.
 All compile-time loops are unrolled. And all false `if`/`else`/`switch` conditions aren't included on the final code. They're still checked for errors though.
 
 ## Error handling
-Functions can return an union instead of the specified return type using `||`:
+Functions can return an error union instead of the specified return type using `||`:
 ```py
 def DivErr : (By_Zero|);
-def div : (a = i32, b = i32) i32 || DivErr => b == 0 ? DivErr.By_Zero : a/b;
+def div : (a = i32, b = i32) i32 || DivErr => b == 0 ? .By_Zero : a/b;
+```
+
+This will implicitly create a temporary union for usage on error handling.
+
+If both the normal return value and the error return value are unions you need to specify the union name on the tag. This avoids ambiguity:
+```py
+def Color : (Red|Green|Blue|Invalid);
+def Error : (Invalid);
+def colorize : (r, g, b = bool) Color || Error =>
+  if   r && (g || b) => Error.Invalid;
+  else g && (r || b) => Error.Invalid;
+  else b && (r || g) => Error.Invalid;
+  else               => r ? Color.Red : g ? Color.Green : b ? Color.Blue : Color.Invalid;
+```
+
+Otherwise it's safe to just use the `.<tag>` shortcut:
+```py
+def Error : (Invalid|None);
+def colorize : (r, g, b = bool) u32 || Error =>
+  if   r && (g || b) => .Invalid;
+  else g && (r || b) => .Invalid;
+  else b && (r || g) => .Invalid;
+  else               => r ? 0xff0000 : g ? 0x00ff00 : b ? 0x0000ff : .None;
 ```
 
 If that's the case you can't just call the function normally, you have to handle the error.
@@ -3268,15 +3312,27 @@ def res = div(10, 0) or 0;
 
 The value returned from the right-hand side has to have the same type of the left-hand side or void. If the right-hand side returns void while the other side doesn't the program crashes:
 ```py
-def res = div(10, 0) or { }; # will crash
+def res = div(10, 0) or this_returns_void(); # will crash
+def res = div(10, 0) or 0.0; # compile-time error
 ```
 
 If the `or` rhs is empty the program will crash if it reaches it as well:
 ```py
 def foo : (error = bool) void || Some_Error => if error => Some_Error.Occurred;
 foo(false) or; # fine
-foo(true) or { }; # will not crash, both sides return void
+foo(true) or this_returns_void(); # will not crash, both sides return void
 foo(true) or; # will crash, rhs of 'or' is empty
+```
+
+You can think of this as an implicit exit [syscall](https://en.wikipedia.org/wiki/System_call) being added automatically. Because that's exactly what's happening.
+
+If you use `ret` or `brk` you actually avoid the exit call, no crash occur, but the expressions will still work like usual:
+```py
+{
+  foo(true) or brk;
+  println("never printed");
+}
+println("no crash!");
 ```
 
 If you're sure that an error will never occur use the `nothing` keyword. This get rid of the check:
@@ -3295,15 +3351,74 @@ def res = 0;
 res = div(10, 0) or nothing; # res holds stack garbage now
 ```
 
-Because of this `or nothing` is extremely unsafe. Use only when you're certain that no errors will occur.
+Because of this `or nothing` is extremely unsafe. Use only when you're certain that no errors will occur, if not just stick with the simpler and safer `or;`.
+
+An example of safe use of `or nothing` for optimization:
+```py
+def x = 0;
+for i in 1..10 => x += div(x, i) or nothing;
+```
 
 You can get the error value with the `or(<name>)` syntax, this will create a temporary variable that lives for the duration of the rhs expression:
 ```py
 res = div(10, 0) or(e) if e == .ByZero => println("division by zero"); # will crash
 ```
 
-## Options
-Work in progress...
+`or` is an operator, and as such chaining is possible:
+```py
+this() or that() or(e) println("error: %", [e]);
+```
+
+### Options
+An option is just a type that can have the value `null` instead of a valid value. Internaly the type just gains a flag value telling if it's null or not. To create an option add `?` as a prefix to the type:
+```py
+def x = ?i32 null;
+```
+
+The default value of that type is now `null`:
+```py
+def x = ?i32; # x == null
+```
+
+You can only use an optional variable if it's clear to the compiler that said variable isn't null:
+```py
+def x = ?i32 maybe_number();
+def y = i32 x; # error: 'x' may be null
+```
+
+The correct way to handle an optinal variable is to check if it's `null` first
+```py
+def x = ?i32 maybe_number();
+def y = i32;
+if x != null => y = x; # valid
+else => y = 0;
+```
+
+You can use the `or` operator on options. This will make the check automatic:
+```py
+def x = ?i32 maybe_number();
+def y = x or 0;
+```
+
+The same `or` rules established earlier applies here. `or;` will crash, mismatched type will cause an error and void return will crash:
+```py
+def x = ?i32 maybe_number();
+def _ = x or; # maybe crash
+def _ = x or 0.0; # error: mismatched type
+def _ = x or returns_void(); # maybe crash
+def _ = x or nothing; # stack garbage if 'x' is null
+```
+
+#### Optional pointer
+An optional pointer doesn't add an aditional flag, instead it just treats the value `0` as null. All the other constraints still applies:
+```py
+def p = ?*i32 maybe_reference();
+def _ = *p; # error: 'p' maybe null
+def _ = *p or; # maybe crash
+def _ = *p or 0.0; # error: mismatched type
+def _ = *p or returns_void(); #maybe crash
+def _ = *p or nothing; # derreferecing null pointer if 'p' is null
+```
 
 ## Type families
 Work in progress...
@@ -3372,6 +3487,7 @@ Work in progress...
 | 15         | \|=      | Variable assignment by bitwise or          | Right to Left |
 | 15         | ^=       | Variable assignment by bitwise xor         | Right to Left |
 | 16         | ,        | Comma                                      | Right to Left |
+| 16         | |        | Union pipe                                 | Right to Left |
 
 ## Namespaces
 Work in progress...
@@ -3394,6 +3510,10 @@ NOTE: arena allocator and Arena_Array
 Work in progress...
 
 ### I/O module
+Work in progress...
+
+### String module
+NOTE: String builder
 Work in progress...
 
 ### OS module
