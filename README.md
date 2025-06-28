@@ -95,6 +95,13 @@ def foo : () void =>;
 def foo : () =>;
 ```
 
+### Multiple return values
+Multiple return values aren't possible, but you can use a [struct](#Structs) instead:
+```py
+def div : (a, b = i32) (bool, i32) => b == 0 ? (false, 0) : (true, a/b);
+def (is_div_by_zero, res) = div(4, 2);
+```
+
 ### Expression blocks
 For functions with more then one expression use an expression block.
 ```py
@@ -880,7 +887,6 @@ There are two types of primitive types, the ones that can be assigned to runtime
 None of the compile-time-only primitives have a size
 - __Any integer:__ `anyi`
 - __Any floating point:__ `anyf`
-- __Any string:__ `anys`
 - __Variable type:__ `type`
 - __Ranges:__ `range`
 
@@ -984,7 +990,7 @@ def ending_index = RANGE.end;
 | 123.0f64         | f64 literal      | f64                                 | f64                                                               |
 | true/false       | Boolean literal  | bool                                | bool                                                              |
 | null             | Null constant    | option                              | option                                                            |
-| "text"           | String literal   | anys (can be passed to str or cstr) | str                                                               |
+| "text"           | String literal   | str                                 | str                                                               |
 | c"text"          | C string literal | cstr                                | cstr                                                              |
 | i32, f32, Struct | Types directly   | type                                | The typed 'type' (i32, f32, etc) with a default value             |
 | \[1, 2, 3\]      | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
@@ -995,7 +1001,6 @@ def ending_index = RANGE.end;
 
 __Caveats and Notes:__
 * Passing constants with `anyi` type into mismatched integers will cause an error. E.g. constant with value 1234 passed to an `u8`
-* Passing constants with `anys` type with non-ascii characters into a `cstr` will cause an error.
 * Binary, octal and hexdecimal literals can't be negative. But they can be assigned to signed integers.
 * An array type will always be based on the inferred type of the first element. E.g. `array = [1, 2, 3]` == `array = [3]inferred-type-of-array[0]`
 * Integer literals can be separated by underscores for readability. E.g. `1_000_000`
@@ -1074,10 +1079,13 @@ def a = mut i32;
 def b = mut i32;
 def p0 = *mut i32 &a;
 *p0 = 10; # valid, it's a mutable pointer
-p0 = &b; # invalid, 'p0' is immutable
+p0 = &b; # invalid, 'p0' is a immutable variable
 def p1 = mut *i32 &a;
 *p1 = 10; # invalid, it's an immutable pointer
-p1 = &b; # valid, 'p1' is mutable
+p1 = &b; # valid, 'p1' is a mutable variable
+def p2 = mut *mut i32 &a;
+*p2 = 10; # valid, 'p2' is a mutable pointer
+p2 = &b; # valid, 'p2' is a mutable variable
 ```
 
 ### Pointer arithimatic
@@ -1091,6 +1099,8 @@ def x = *(ptr + 1); # equivalent to nums[1]
 ```
 
 The only operations possible with pointers are: `+`, `-`, `+=`, `-=`, `++` prefix and suffix, `--` prefix and suffix.
+
+Pointer's do not have bounds checking. It's not even possible because a pointer is just a pointer, no extra metadata.
 
 ### Pointer definition
 Differently from other variable types, pointers cannot be initialized to nothing. This is because pointers don't have a default value and must always point to memory:
@@ -1161,7 +1171,7 @@ def _a = 10;
 def ptr = &_a;
 ```
 
-So the lifetime of the invisible variable created is stack based.
+So the lifetime of the invisible variable created is the same as the variable it's assigned to.
 
 Mutable addresses are also possible:
 ```py
@@ -1175,120 +1185,6 @@ def ptr = &_a;
 ```
 
 It works for any literal.
-
-## Casting
-Stark is strongly typed. You can't pass an u8 to a f32 or even an i8 to an i16. But sometimes casting is needed, on those cases use the `->` operator:
-```py
-def a = 1.5;
-def b = a -> i32; # now 'b' is an i32 with a value of 1
-```
-
-Chained casting is valid:
-```py
-def a = 1.5;
-def b = a -> i32 -> u8; # 'b' is an i8 with value 1
-```
-
-### Pointer casting
-The `->` operator can also be used on pointers:
-```py
-def a = i32;
-def p0 = &a;
-def p1 = p0 -> *i8; # p1 points to 'a' as if it was a '*i8'
-```
-
-It's not possible to cast an immutable pointer into a mutable one:
-```py
-def a = i32;
-def p0 = &a;
-def p1 = p0 -> *mut i8; # error
-```
-
-Casting between pointers and integers is possible:
-```py
-def a = i32;
-def p0 = &a;
-def i0 = p0 -> u64; # valid
-def i1 = p0 -> isize; # valid
-def i2 = p0 -> i8; # valid
-def p1 = i0 -> *i32; # valid
-```
-
-Keep in mind that casting between pointers, and specially pointer-integer casting, can be extremely unsafe:
-```py
-def a = 0xdeadbeef;
-def p1 = i0 -> *i32;
-def b = *p1; # program will crash
-```
-
-It's not possible to cast an integer into a mutable pointer:
-```py
-def a = 0xdeadbeef;
-def p1 = i0 -> *mut i32; # error
-```
-
-### String casting
-Casting from `cstr` to `str` is possible:
-```py
-def some_str = c"hello" -> str;
-```
-
-Casting from `str` to `cstr` is also possible:
-```py
-def some_cstr = "hello" -> cstr;
-```
-
-Keep in mind that when casting `str -> cstr` non-ascii characters will be translated to `-1`:
-```py
-def some_cstr = "olá" -> cstr; # 'á' will become -1 and the printing will be weird
-```
-
-### Union casting 
-Casting between union tags is possible:
-```py
-def Some_Union : (i32+|str+);
-def x = Some_Union.str "hi";
-def _ = x -> Some_Union.i32; # valid
-def _ = x -> .i32; # valid
-```
-
-This just changes the tag of the casted union, the data will remain the same.
-
-It's not possible to cast between different unions, even if the data and tag numeric value would technically remain the same:
-```py
-def Some_Union0 : (i32+|str+);
-def Some_Union1 : (i32+|str+);
-def x = Some_Union0.str "hi";
-def _ = x -> Some_Union1.str; # invalid
-```
-
-### Auto casting
-Sometimes you don't want to explicitly cast to a type. Use the `!` operator as an automatic `-> type` cast to the expected type:
-```py
-def sum : (a, b = i32) i32 => a+b;
-def x = sum(12, 1.6!); # equivalent to 'sum(12, 1.6 -> i32)'
-def y = u64 1.6!;
-```
-
-`!` operator is not valid for pointers:
-```py
-def foo : (ptr = *i32) => ...;
-def x = i32 10;
-def y = *u8;
-foo(x!); # invalid
-foo(y!); # invalid
-```
-
-Or unions:
-```py
-def Some_Union : (i32+|str+);
-def foo : (x = Some_Union.i32) => ...;
-def x = Some_Union.str "hi";
-foo(x!); # invalid
-```
-
-### Invalid casting
-Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases or unions).
 
 ## Arrays
 Arrays are a buffer of objects of the same type with a compile-time known length.
@@ -1304,6 +1200,12 @@ It's possible to use array literals for non-default values:
 ```py
 def arr = [1, 2, 3]; # arr[0] == 1, arr[1] == 2, arr[2] == 3. Length of the array is 3
 def arr_explicit = [3]i32 [4, 5, 6]; # same thing, but the array type is explicit
+```
+
+This type of array literal can have a type before it to ensure what the array type will be:
+```py
+def arr = i32[1, 2, 3];
+def arr_explicit = [3]i32 i32[4, 5, 6]; # same thing, but the array type is explicit
 ```
 
 Another way of writing an array literal is `[amount]default-value`:
@@ -1322,6 +1224,27 @@ This is good for explicit typing the elements.
 You can also initialize arrays to garbage:
 ```py
 def arr = [3]u64 ---;
+```
+
+Array destructuring is possible, this is useful for creating multiple variable with different values:
+```py
+def [a, b, c] = [1, 2, 3];
+def [c, d, e] = i32[1, 2, 3];
+def [f, g, h] = [3]1.5;
+def arr = [1, 2, 3];
+def [i, j, k] = arr;
+```
+
+And using the ['_' identifier](#Unused-variables-and-the-_-identifier) for skipping is possible:
+```py
+def arr = [1, 2, 3];
+def [i, j, _] = arr;
+```
+
+Mismatch variable definition with the array length isn't allowed:
+```py
+def arr = [1, 2, 3];
+def [i, j] = arr; # error: expected 3 variable definitions, but found only 2
 ```
 
 Arrays can have 0 length. The array will actually occupy 0 bytes, in other words, it does not exists in memory.
@@ -1652,6 +1575,67 @@ def Vec2 : (x, y = f32);
 def double : (a = Vec2) Vec2 => (a.x*2, a.y*2);
 def _ = double(1.0, 2.0); # valid
 ```
+
+#### Destructed struct instantiation
+You actually can instantiate a struct with all of it's members being actual variables in the main scope:
+```py
+def Vec2 : (x, y = f32);
+def (x, y) = Vec2(1.0, 2.0);
+```
+
+The variables created can have any name you want:
+```py
+def (a, b) = Vec2(1.0, 2.0);
+```
+
+You can skip fields using the ['_' identifier](#Unused-variables-and-the-_-identifier):
+```py
+def Foo : (a, b, c = i32);
+def (_, b, _) = Foo(1, 2, 3);
+```
+
+Mismatch variable definition isn't allowed:
+```py
+def Foo : (a, b, c = i32);
+def (a, b) = Foo(1, 2, 3); # error: expected 3 variable definitions, but found only 2
+```
+
+### Unnamed members
+Struct members can actually not have names:
+```py
+def Some_Struct : (u32, named_member = f32);
+```
+
+If that's the case you access the unnamed member via the order of unnamed member definition number, starting at 0. Named members do not count toward unnamed index positions:
+```py
+def Some_Struct : (u32, named_member = f32, i32); # struct has '.0' as u32 and '.1' as i32
+def foo = Some_Struct(1, 2.0, -3);
+def a = foo.0; # a == 1u32
+def b = foo.1; # b == -3i32
+def c = foo.2; # error: '.2' is not a member of 'Some_Struct'
+```
+
+#### Tuples
+If a struct only has unnamed variable members, this is equivalent to tuples in other languages. Because of this, these structs are also refered as tuples through out the specification:
+```py
+Some_Tuple : (u32, f32, i32);
+def foo = Some_Tuple(1, 2.0, -3);
+def a = foo.0;
+def b = foo.1;
+def c = foo.2;
+def (x, y, z) = Some_Tuple(4, 5.0, -6);
+```
+
+### Struct typing
+Struct types are always distinct, even if the underlying data is the same:
+```py
+def Foo0 : (u32, u32);
+def Foo1 : (u32, u32);
+def a = Foo0(1, 2);
+def b = Foo1 a; # error: 'a' isn't of the type 'Foo1'
+```
+
+See the [casting](#Casting) section for workarounds.
 
 ### Struct mutability
 Forward assigning is still possible with immutable structs:
@@ -2002,7 +1986,7 @@ ent.position.add_eq(Vec2(1, 2, 3)); # valid
 ent.add_eq(Vec2(1, 2, 3)); # error: 'add_eq' isn't a static function for the type 'Entity'
 ```
 
-`take` also works with tuples, unions and basically any type with members.
+`take` also works with [unions](#Unions) and basically any type with members.
 
 ### Structure of Arrays
 Most languages have the Array of Structures layout as the default way to store buffers of structs.
@@ -2275,6 +2259,14 @@ def Some_Union : (Number i32|String str|Vector Vec2);
 def vector = Some_Union Some_Union.Vector(1.0, 2.0); # valid
 ```
 
+If the variable already has the proper union type you can use `.<tag>` as a shortcut:
+```py
+def Some_Union : (Number i32|String str);
+def foo = Some_Union;
+foo = .String "hello";
+```
+
+#### Union default tag
 The default value of an union is always the first declared tag (the tag numeric value does not matter):
 ```py
 def Some_Union : (Number i32|String str);
@@ -2283,13 +2275,6 @@ def num1 = Some_Union.Number;
 ```
 
 In the code above, both `num0` and `num1` have `Some_Union.Number` as their tag numeric representation. 
-
-If the variable already has the proper union type you can use `.<tag>` as a shortcut:
-```py
-def Some_Union : (Number i32|String str);
-def foo = Some_Union;
-foo = .String "hello";
-```
 
 ### Accessing union data
 To access the data of an union use `^` as a suffix:
@@ -2532,6 +2517,136 @@ foo.x = 10;
 a = foo.r; # a == 10
 ```
 
+## Casting
+Stark is strongly typed. You can't pass an u8 to a f32 or even an i8 to an i16. But sometimes casting is needed, on those cases use the `->` operator:
+```py
+def a = 1.5;
+def b = a -> i32; # now 'b' is an i32 with a value of 1
+```
+
+Chained casting is valid:
+```py
+def a = 1.5;
+def b = a -> i32 -> u8; # 'b' is an i8 with value 1
+```
+
+### Pointer casting
+The `->` operator can also be used on pointers:
+```py
+def a = i32;
+def p0 = &a;
+def p1 = p0 -> *i8; # p1 points to 'a' as if it was a '*i8'
+```
+
+It's not possible to cast an immutable pointer into a mutable one:
+```py
+def a = i32;
+def p0 = &a;
+def p1 = p0 -> *mut i8; # error
+```
+
+Casting between pointers and integers is possible:
+```py
+def a = i32;
+def p0 = &a;
+def i0 = p0 -> u64; # valid
+def i1 = p0 -> isize; # valid
+def i2 = p0 -> i8; # valid
+def p1 = i0 -> *i32; # valid
+```
+
+Keep in mind that casting between pointers, and specially pointer-integer casting, can be extremely unsafe:
+```py
+def a = 0xdeadbeef;
+def p1 = i0 -> *i32;
+def b = *p1; # program will crash
+```
+
+It's not possible to cast an integer into a mutable pointer:
+```py
+def a = 0xdeadbeef;
+def p1 = i0 -> *mut i32; # error
+```
+
+### String casting
+Casting from `cstr` to `str` is possible:
+```py
+def some_str = c"hello" -> str;
+```
+
+Casting from `str` to `cstr` is also possible:
+```py
+def some_cstr = "hello" -> cstr;
+```
+
+Keep in mind that when casting `str -> cstr` non-ascii characters will be translated to `-1`:
+```py
+def some_cstr = "olá" -> cstr; # 'á' will become -1 and the printing will be weird
+```
+
+### Union tag casting 
+Casting between union tags is possible:
+```py
+def Some_Union : (i32+|str+);
+def x = Some_Union.str "hi";
+def _ = x -> Some_Union.i32; # valid
+def _ = x -> .i32; # valid
+```
+
+This just changes the tag of the casted union, the data will remain the same.
+
+It's not possible to cast between different unions, even if the data and tag numeric value would technically remain the same:
+```py
+def Some_Union0 : (i32+|str+);
+def Some_Union1 : (i32+|str+);
+def x = Some_Union0.str "hi";
+def _ = x -> Some_Union1.str; # invalid
+```
+
+### Struct casting
+If two struct types have the exact same data layout it is possible to cast between them:
+```py
+def Vec3  : (x, y, z = f32);
+def Color : (r, g, b = f32);
+def pos = Vec2(1.0, 2.0, 3.0);
+def col = pos -> Color; # valid
+```
+
+### Auto casting
+Sometimes you don't want to explicitly cast to a type. Use the `!` operator as an automatic `-> type` cast to the expected type:
+```py
+def sum : (a, b = i32) i32 => a+b;
+def x = sum(12, 1.6!); # equivalent to 'sum(12, 1.6 -> i32)'
+def y = u64 1.6!;
+```
+
+`!` operator is not valid for pointers:
+```py
+def foo : (ptr = *i32) => ...;
+def x = i32 10;
+def y = *u8;
+foo(x!); # invalid
+foo(y!); # invalid
+```
+
+Or union tags:
+```py
+def Some_Union : (i32+|str+);
+def foo : (x = Some_Union.i32) => ...;
+def x = Some_Union.str "hi";
+foo(x!); # invalid
+```
+
+Auto casting between structs with same layout is possible, this is useful for unnamed [structs](#Structs) or [tuples](#Tuples):
+```py
+def div : (a, b = i32) (bool, i32) => b == 0 ? (false, 0) : (true, a/b);
+def Result : (bool, i32);
+def res = Result div(4, 2); # error: types differ
+def res = Result div(4, 2)!; # valid
+```
+
+### Invalid casting
+Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases or union tags).
 ## The meta type
 A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
 
@@ -2697,7 +2812,7 @@ This are the primitive tags:
 | achar (data = *achar)
 ```
 
-Struct, union, tuple, array, slice, pointer and view tags are actually their own unions.
+[Struct](#Structs), [union](#Unions), [tuple](#Tuples), [array](#Arrays), [slice](#Slices), [pointer](#Pointers) and [view](#Views) tags are actually their own unions.
 
 Every tag from the `struct` tag of `anyrt` follow this layout:
 ```py
@@ -2765,6 +2880,27 @@ Distinct aliases are added to `anyrt` directly.
 The tag name of any named type will be the type name itself.
 
 There is a `unnamed` tag, this tag is an union. This union is basically an `anyrt` in itself, every sub-union of `anyrt` has an equivalent inside `unnamed`, every unnamed custom type goes inside `unnamed`, the name of each tag will be `t` +  an arbitrary id.
+
+## Comparable types
+A comparable type is a type that allowes the usage of the `==`, `!=`, `>=` and `<=` operators.
+- `u8` is comparable with `u8` and `anyi`
+- `u16` is comparable with `u16` and `anyi`
+- `u32` is comparable with `u32` and `anyi`
+- `u64` is comparable with `u64` and `anyi`
+- `usize` is comparable with `usize` and `anyi`
+- `i8` is comparable with `i8` and `anyi`
+- `i16` is comparable with `i16` and `anyi`
+- `i32` is comparable with `i32` and `anyi`
+- `i64` is comparable with `i64` and `anyi`
+- `isize` is comparable with `isize` and `anyi`
+- `f32` is comparable with `f32` and `anyf`
+- `f64` is comparable with `f64` and `anyf`
+- `str` is comparable with `str`
+- `cstr` is comparable with `cstr`
+- Arrays can be compared if their length and type is the same
+- Slices can be compared if their type is the same
+- Struct instances can be compared if all their members are comparable types, and their struct type is the same
+- Unions are comparable with it's tags
 
 ## Control flow (if, else, switch and loops)
 ### If and else
@@ -2848,12 +2984,12 @@ switch <value> (
 );
 ```
 
-The equivalent of a conditionless else in a switch expression is just the `_` identifier:
+The equivalent of a conditionless else in a switch expression is the `or` keyword:
 ```py
 switch <value> (
   <case> => do_this(),
   <case> => do_that(),
-  _      => do_fallback(),
+  or     => do_fallback(),
 );
 ```
 
@@ -2863,9 +2999,9 @@ The `<case>` must be a value that the `<value>` can be compared to.
 
 A `switch` expression follow to returning values as an `if`/`else` chain:
 ```py
-def _ = switch some_i32 (10 => 10, _    => 0); # valid
+def _ = switch some_i32 (10 => 10, or   => 0); # valid
 def _ = switch some_i32 (10 => 10, 0..9 => 9); # error: switch that returns expression missing a '_' case
-def _ = switch some_i32 (10 => 10, _    => 9.0); # error: switch that returns different types
+def _ = switch some_i32 (10 => 10, or   => 9.0); # error: switch that returns different types
 switch some_i32 (x == 10 => 10, _ = 9); # error: unhandled expression
 ```
 
@@ -2873,7 +3009,7 @@ You can have multiple cases assigned to the same body:
 ```py
 switch some_i32 (
   0, 1, 2 => do_something(),
-  _       =>               ,
+  or      =>               ,
 );
 ```
 
@@ -2898,14 +3034,14 @@ switch col (
 ); # error: unhandled 'Blue' tag on an union switch
 ```
 
-You can use the `_` case to explicitly say that you don't want to handle does cases:
+You can use the `or` case to explicitly say that you don't want to handle does cases:
 ```py
 def Color : (Red|Green|Blue);
 def col = Color;
 switch col (
   Red => do_red(),
   Green => do_green(),
-  _ =>;
+  or =>;
 ); # valid
 ```
 
@@ -3009,13 +3145,13 @@ You can mark the range as `rev` for reverse iteration:
 for i in rev 0..9 => println("%", [i]);
 ```
 
-For arrays and slices the value is a tuple of the current iteration index + an element from the array/slice. This element behavies like a value, but it can actually be a reference. It's similar to how [function arguments](#Immutable-arguments-are-references) works:
+For arrays and slices the value is a [tuple](#Tuples) of the current iteration index + an element from the array/slice. This element behavies like a value, but it can actually be a reference. It's similar to how [function arguments](#Immutable-arguments-are-references) works:
 ```py
 def nums = [1, 2, 3];
 for (i, n) in nums => println("nums[%] = %", [i, n]);
 ```
 
-It's also possible to mark the tuple as mutable, if that's the case the element will be a pointer:
+It's also possible to mark the [tuple](#Tuples) as mutable, if that's the case the element will be a pointer:
 ```py
 def nums = mut [1, 2, 3];
 for (i, n) = mut in nums => {
@@ -3081,7 +3217,7 @@ The `iter` method should look like this:
 def Some_Type.iter : (self = *Some_Type) Some_Iter => ...;
 ```
 
-Iterators on for loops are similar to arrays/slices, the difference is that the element will always be a pointer:
+Iterators on `for` loops are similar to arrays/slices, the difference is that the element will always be a pointer:
 ```py
 def nums = Linked_List.make[1, 2, 3];
 for (i, n) in nums => println("nums[%] = %", [i, *n]);
@@ -3103,7 +3239,7 @@ else => ...;
 @switch SOME_NEW_CONST (
   case0 => ...;
   case1 => ...;
-  _ => ...;
+  or    => ...;
 );
 
 @while SOME_CONST => ...;
@@ -3115,18 +3251,58 @@ And all of them can be ran in module-scope.
 
 All compile-time loops are unrolled. And all false `if`/`else`/`switch` conditions aren't included on the final code. They're still checked for errors though.
 
-## Tuples and error handling
-Tuple definition syntax:
+## Error handling
+Functions can return an union instead of the specified return type using `||`:
 ```py
-def Some_Union : (type0, type1, type2, ...);
+def DivErr : (By_Zero|);
+def div : (a = i32, b = i32) i32 || DivErr => b == 0 ? DivErr.By_Zero : a/b;
 ```
-Work in progress...
-### 'or', 'or_brk' and 'or_ret' keywords on tuples
-Work in progress...
+
+If that's the case you can't just call the function normally, you have to handle the error.
+
+### The 'or' operator
+The `or` operator is the way to handle errors returned by functions. If no errors occur the expected value is returned from the expression, if errors do occur a the value is returned from the right-hand side of the `or` operator:
+```py
+def res = div(10, 0) or 0;
+```
+
+The value returned from the right-hand side has to have the same type of the left-hand side or void. If the right-hand side returns void while the other side doesn't the program crashes:
+```py
+def res = div(10, 0) or { }; # will crash
+```
+
+If the `or` rhs is empty the program will crash if it reaches it as well:
+```py
+def foo : (error = bool) void || Some_Error => if error => Some_Error.Occurred;
+foo(false) or; # fine
+foo(true) or { }; # will not crash, both sides return void
+foo(true) or; # will crash, rhs of 'or' is empty
+```
+
+If you're sure that an error will never occur use the `nothing` keyword. This get rid of the check:
+```py
+def res = div(10, 2) or nothing;
+```
+
+If an error does occur the variable will hold garbage:
+```py
+def res = div(10, 0) or nothing; # res holds stack garbage now
+```
+
+Even if the variable was already defined:
+```py
+def res = 0;
+res = div(10, 0) or nothing; # res holds stack garbage now
+```
+
+Because of this `or nothing` is extremely unsafe. Use only when you're certain that no errors will occur.
+
+You can get the error value with the `or(<name>)` syntax, this will create a temporary variable that lives for the duration of the rhs expression:
+```py
+res = div(10, 0) or(e) if e == .ByZero => println("division by zero"); # will crash
+```
 
 ## Options
-Work in progress...
-### 'or', 'or_brk' and 'or_ret' keywords on options
 Work in progress...
 
 ## Type families
@@ -3141,65 +3317,66 @@ Work in progress...
 ## Precedence table
 | Precedence | Operator | Description                                | Associativity |
 |------------|----------|--------------------------------------------|---------------|
-| 0          | @        | At compile-time operator                   | Left to Right |
-| 1          | func()   | Regular function call                      | Left to Right |
-| 1          | func x   | One argument function call                 | Left to Right |
-| 1          | x func y | Infix function call                        | Left to Right |
-| 1          | ++       | Suffix increment                           | Left to Right |
-| 1          | --       | Suffix decrement                           | Left to Right |
-| 1          | []       | Indexing                                   | Left to Right |
-| 1          | .        | Member access                              | Left to Right |
-| 1          | Struct() | Struct literal                             | Left to Right |
-| 2          | ++       | Prefix increment                           | Right to Left |
-| 2          | --       | Prefix decrement                           | Right to Left |
-| 2          | +        | Unary plus                                 | Right to Left |
-| 2          | -        | Unary minus                                | Right to Left |
-| 2          | !        | Logical not                                | Right to Left |
-| 2          | ~        | Bitwise not                                | Right to Left |
-| 2          | ^        | Get union value (suffix)                   | Left to Right |
-| 2          | ^        | Get union tag number (prefix)              | Right to Left |
-| 2          | *        | Pointer dereferencing                      | Right to Left |
-| 2          | &        | Address of                                 | Right to Left |
-| 2          | &mut     | Mutable address of                         | Right to Left |
-| 2          | ->       | Safe cast between types                    | Left to Right |
-| 2          | !        | Safe automatic cast between types          | Left to Right |
-| 3          | *        | Multiplication                             | Left to Right |
-| 3          | /        | Division                                   | Left to Right |
-| 3          | %        | Modular                                    | Left to Right |
-| 4          | +        | Addition                                   | Left to Right |
-| 4          | -        | Subtraction                                | Left to Right |
-| 5          | <<       | Bitwise shift left                         | Left to Right |
-| 5          | >>       | Bitwise shift right                        | Left to Right |
-| 6          | >        | Greater than                               | Left to Right |
-| 6          | <        | Less than                                  | Left to Right |
-| 6          | >=       | Greater or equals than                     | Left to Right |
-| 6          | <=       | Less or equals than                        | Left to Right |
-| 7          | ==       | Equals                                     | Left to Right |
-| 7          | !=       | Not equal                                  | Left to Right |
-| 8          | &        | Bitwise and                                | Left to Right |
-| 9          | \|       | Bitwise or                                 | Left to Right |
-| 10         | ^        | Bitwise xor                                | Left to Right |
-| 11         | &&       | Logical and                                | Left to Right |
-| 12         | \|\|     | Logical or                                 | Left to Right |
-| 13         | ?:       | Ternary conditional                        | Right to Left |
-| 14         | :        | Constant assignment                        | Right to Left |
-| 14         | =        | Variable assignment                        | Right to Left |
-| 14         | +=       | Variable assignment by sum                 | Right to Left |
-| 14         | -=       | Variable assignment by difference          | Right to Left |
-| 14         | *=       | Variable assignment by product             | Right to Left |
-| 14         | /=       | Variable assignment by quotient            | Right to Left |
-| 14         | %=       | Variable assignment by modular             | Right to Left |
-| 14         | <<=      | Variable assignment by bitwise left shift  | Right to Left |
-| 14         | >>=      | Variable assignment by bitwise right shift | Right to Left |
-| 14         | &=       | Variable assignment by bitwise and         | Right to Left |
-| 14         | \|=      | Variable assignment by bitwise or          | Right to Left |
-| 14         | ^=       | Variable assignment by bitwise xor         | Right to Left |
-| 15         | ,        | Comma                                      | Right to Left |
-
-## Concurrency
-Work in progress...
+| 0          | @        | At compile-time operator                   | Right to Left |
+| 1          | or       | Or error operator                          | Left to Right |
+| 2          | func()   | Regular function call                      | Left to Right |
+| 2          | func x   | One argument function call                 | Left to Right |
+| 2          | x func y | Infix function call                        | Left to Right |
+| 2          | ++       | Suffix increment                           | Left to Right |
+| 2          | --       | Suffix decrement                           | Left to Right |
+| 2          | []       | Indexing                                   | Left to Right |
+| 2          | .        | Member access                              | Left to Right |
+| 2          | Struct() | Struct literal                             | Left to Right |
+| 3          | ++       | Prefix increment                           | Right to Left |
+| 3          | --       | Prefix decrement                           | Right to Left |
+| 3          | +        | Unary plus                                 | Right to Left |
+| 3          | -        | Unary minus                                | Right to Left |
+| 3          | !        | Logical not                                | Right to Left |
+| 3          | ~        | Bitwise not                                | Right to Left |
+| 3          | ^        | Get union value (suffix)                   | Left to Right |
+| 3          | ^        | Get union tag number (prefix)              | Right to Left |
+| 3          | *        | Pointer dereferencing                      | Right to Left |
+| 3          | &        | Address of                                 | Right to Left |
+| 3          | &mut     | Mutable address of                         | Right to Left |
+| 3          | ->       | Safe cast between types                    | Left to Right |
+| 3          | !        | Safe automatic cast between types          | Left to Right |
+| 4          | *        | Multiplication                             | Left to Right |
+| 4          | /        | Division                                   | Left to Right |
+| 4          | %        | Modular                                    | Left to Right |
+| 5          | +        | Addition                                   | Left to Right |
+| 5          | -        | Subtraction                                | Left to Right |
+| 6          | <<       | Bitwise shift left                         | Left to Right |
+| 6          | >>       | Bitwise shift right                        | Left to Right |
+| 7          | >        | Greater than                               | Left to Right |
+| 7          | <        | Less than                                  | Left to Right |
+| 7          | >=       | Greater or equals than                     | Left to Right |
+| 7          | <=       | Less or equals than                        | Left to Right |
+| 8          | ==       | Equals                                     | Left to Right |
+| 8          | !=       | Not equal                                  | Left to Right |
+| 9          | &        | Bitwise and                                | Left to Right |
+| 10         | \|       | Bitwise or                                 | Left to Right |
+| 11         | ^        | Bitwise xor                                | Left to Right |
+| 12         | &&       | Logical and                                | Left to Right |
+| 13         | \|\|     | Logical or                                 | Left to Right |
+| 14         | ?:       | Ternary conditional                        | Right to Left |
+| 15         | :        | Constant assignment                        | Right to Left |
+| 15         | =        | Variable assignment                        | Right to Left |
+| 15         | +=       | Variable assignment by sum                 | Right to Left |
+| 15         | -=       | Variable assignment by difference          | Right to Left |
+| 15         | *=       | Variable assignment by product             | Right to Left |
+| 15         | /=       | Variable assignment by quotient            | Right to Left |
+| 15         | %=       | Variable assignment by modular             | Right to Left |
+| 15         | <<=      | Variable assignment by bitwise left shift  | Right to Left |
+| 15         | >>=      | Variable assignment by bitwise right shift | Right to Left |
+| 15         | &=       | Variable assignment by bitwise and         | Right to Left |
+| 15         | \|=      | Variable assignment by bitwise or          | Right to Left |
+| 15         | ^=       | Variable assignment by bitwise xor         | Right to Left |
+| 16         | ,        | Comma                                      | Right to Left |
 
 ## Namespaces
+Work in progress...
+
+## Concurrency
 Work in progress...
 
 ## Modules, build system and linking
