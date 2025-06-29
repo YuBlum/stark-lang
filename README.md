@@ -403,14 +403,9 @@ With constant arguments you can make generic functions using the `type` type:
 def sum : (T : type, a, b = T) T => a + b;
 ```
 
-It's also possible to use the `is` (see more on [the type families section](#Type-Families)):
+It's also possible to use the `is` (see more on [the class section](#The-is-operator)):
 ```py
 def sum : (T : type is number, a, b = T) T => a + b;
-```
-
-Or just family types directly:
-```py
-def sum : (T : number, a, b = T) T => a + b;
 ```
 
 ### Unordered parameters
@@ -455,7 +450,7 @@ This calling convention is the reason why [function types have their arguments n
 ### Implicit constant parameters
 If a constant argument is used in some way by other arguments you can add the `imp` attibute to it. This will make that argument be implicitly defined based on it's first use:
 ```py
-def add : (T : imp number, a, b = T) T => a+b;
+def add : (T : imp type is number, a, b = T) T => a+b;
 def x = add(1, 2);
 def y = add(1.6, 2.1);
 def y = add(1.6, 2); # error: an i32 is being passed to 'b' and expected a f32
@@ -463,21 +458,21 @@ def y = add(1.6, 2); # error: an i32 is being passed to 'b' and expected a f32
 
 If a constant argument is marked as `imp` it has to be used on at least one other non-imp argument:
 ```py
-def foo : (T : imp number, a, b = i32) i32 => a+b; # error: 'T' has to be used on other arguments
+def foo : (T : imp type is number, a, b = i32) i32 => a+b; # error: 'T' has to be used on other arguments
 ```
 
 You can still set the value of the constant parameter explictly using the unordered parameter function call:
 ```py
-def add : (T : imp number, a, b = T) T => a+b;
+def add : (T : imp type is number, a, b = T) T => a+b;
 def x = add(.T : u64, 1, 2);
 ```
 
 Infix and one-paremeter calls can be used with more than two or one paremeters if the extra ones are constant `imp` arguments:
 ```py
-def add : (T : imp number, a, b = T) T => a+b;
+def add : (T : imp type is number, a, b = T) T => a+b;
 def _ = 1 add 2; # valid
 def _ = 1.2 add 2.1; # valid
-def square : (T : imp number, a = T) T => a*a;
+def square : (T : imp type is number, a = T) T => a*a;
 def _ = square 5; # valid
 def _ = square 5.5; # valid
 ```
@@ -552,20 +547,20 @@ fn(const_arg0 : type0, const_arg1 : type1, var_arg0 = type0, var_arg1 = type1) r
 Here are some examples with functions and what the type will look like:
 ```py
 def square_i32 : (x = i32) i32            => x*x;
-def square_any : (T : number, x = T) T    => x*x;
+def square_any : (T : type is number, x = T) T    => x*x;
 def sum_i32    : (x, y = i32) i32         => x+y;
-def sum_any    : (T : number, x, y = T) T => x+y;
+def sum_any    : (T : type is number, x, y = T) T => x+y;
 def set_any_x  : (T : type, foo = T)      => foo.x = something();
 # square_i32 type: fn(x = i32) i32
-# square_any type: fn(T : number, x = T) T
+# square_any type: fn(T : type is number, x = T) T
 # sum_i32 type:    fn(x = i32, y = i32) i32
-# sum_any type:    fn(T : number, x = T, y = T) T
-# set_any_x type:  fn(T : number, x = T, y = T) void
+# sum_any type:    fn(T : type is number, x = T, y = T) T
+# set_any_x type:  fn(T : type is number, x = T, y = T) void
 ```
 
 With that in mind you can define a function without [type inference](#Type-inference):
 ```py
-def sum_any : fn(T : number, x = T, y = T) T (T : number, x, y = T) T => x+y;
+def sum_any : fn(T : type is number, x = T, y = T) T (T : type is number, x, y = T) T => x+y;
 ```
 
 But this is extremely verbose.
@@ -613,7 +608,7 @@ def var = &(x = i32) i32 => var(x)*x; # error: var is undefined
 
 Function pointers can't have constant arguments. To get a function pointer from a function with constant arguments you have to do the following:
 ```py
-def square : (T : number, x = T) T => x*x;
+def square : (T : type is number, x = T) T => x*x;
 def ptr_to_square_i32 = &square(i32);
 def ptr_to_square_f32 = &square(f32); # different pointer from 'ptr_to_square_i32'
 ```
@@ -629,8 +624,8 @@ Obviously is not possible to take the mutable address of a function, so mutable 
 There are basically three ways of passing functions as arguments:
 1. Function pointers
 2. Constant arguments with function type
-3. Constant arguments with [overload set](#Overload-sets) type
-TODO: This overload set syntax is problably gonna change
+3. Constant arguments with [overload](#Overloads) type
+TODO: This overload syntax is problably gonna change
 ```py
 def some_overload : ol|a is number|(a, a) a;
 def foo : (fn = *(i32, i32) i32, x, y = i32) i32 => fn(x, y);
@@ -640,7 +635,7 @@ def bar : (fn : some_overload, x, y = i32) i32 => fn(x, y);
 
 The function pointer one will have memory, so it can be assigned to things.
 
-The overload set one will accept all functions that are part of that overload_set.
+The overload one will accept all functions that are part of that overload_set.
 
 And the function type one will accept any function.
 
@@ -899,6 +894,7 @@ None of the compile-time-only primitives have a size
 - __Any floating point:__ `anyf`
 - __Variable type:__ `type`
 - __Ranges:__ `range`
+- __Classes:__ `class`
 
 This types are valid to use in constants and [ensured-compile-time functions](#Compile-time-functions).
 
@@ -1275,7 +1271,7 @@ def arr = [1, 2, 3, 4, 5];
 def arr_len = @len(arr);
 ```
 
-`len()` is actually an [overload set](#Overload-sets), not a function. But specifically the array function overload is an ensured-compile-time one, so the `@` operator is necessary.
+`len()` is actually an [overload](#Overloads), not a function. But specifically the array function overload is an ensured-compile-time one, so the `@` operator is necessary.
 
 ### Passing arrays as parameters
 Because array values must have known compile-time length they can't be passed directly to function variable parameters.
@@ -1440,7 +1436,7 @@ def y = sum[1, 2, 3, 4]; # using the one paremeter call convention
 ```
 
 ### Getting the length of a slice 
-Slices have an overload in the builtin `len()` overload set. It's not compile-time, so `@` isn't needed:
+Slices have a function in the builtin `len()` overload. It's not compile-time, so `@` isn't needed:
 ```py
 def arr = [1, 2, 3];
 def slice = arr[..];
@@ -1734,7 +1730,7 @@ def Vec2_2 : (T : type, y = T); # valid
 
 Instantiating a struct with a constant member follow all the previous rules established:
 ```py
-def Foo : (T : number, a = T, b = T 10, c, d = T);
+def Foo : (T : type is number, a = T, b = T 10, c, d = T);
 def _ = Foo(.c = 10, .a = 4, .b = -15, .d = 4, .T = i32);
 def _ = Foo(i32, 9, .c = 11, .d = 12);
 def _ = Foo(i32, 9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
@@ -1746,19 +1742,19 @@ def _ = Foo(i32, 9, .c = 11); # a == 9, b == 10, c == 11, d == 0
 
 The `imp` attribute can be used on constant members:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def _ = Vec2(1, 2); # T = i32
 def _ = Vec2(1.2, 2.1); # T = f32
 ```
 
 And follow the same rules as `imp` arguments:
 ```py
-def Vec2 : (T : imp number, x, y = f32); # error: 'T' needs to be used in other members
+def Vec2 : (T : imp type is number, x, y = f32); # error: 'T' needs to be used in other members
 ```
 
 The type of a variable with a constant members is `Struct(<constant-arguments>)`, this is called a 'struct variant':
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(1, 2); # type_of(a) == Vec2(i32)
 def b = Vec2(1.2, 2.1); # type_of(b) == Vec2(f32)
 def c = Vec2(i32) Vec2(3, 4); # Explicitly typed
@@ -1766,7 +1762,7 @@ def c = Vec2(i32) Vec2(3, 4); # Explicitly typed
 
 Structs with constant members without the `imp` attribute can't be forward assigned because of this:
 ```py
-def Vec2 : (T : number, x, y = T);
+def Vec2 : (T : type is number, x, y = T);
 def a = Vec2(i32); # 'a' type is actually being inferred by the initializer 'Vec2(i32)'
 def b = Vec2(i32) Vec2(i32); # equivalent to 'a' but explicitly typed.
 a = Vec2(i32, 1, 2); # error: 'a' is immutable
@@ -1774,46 +1770,46 @@ a = Vec2(i32, 1, 2); # error: 'a' is immutable
 
 With the `imp` attribute is fine though:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(i32);
 a = Vec2(1, 2); # valid
 ```
 
 Structs with `imp` constant members cannot be empty initialized:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(); # error: 'T' needs to be assigned
 ```
 
 Assign the constant member explicitly if this is desired behaviour:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(.T = i32); # valid
 ```
 
 Or set the variable type explicitly, them the empty initializer will work:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(i32) Vec2(); # valid
 ```
 
 It's possible to access constant members:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(1, 2);
 def b = a.T Vec2(); # valid: 
 ```
 
 But is not possible to modify them:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def a = Vec2(1, 2);
 a.T = f32; # error: 'T' is a constant
 ```
 
 To pass structs with constant members to functions the struct variant must be explicit:
 ```py
-def Vec2 : (T : imp number, x, y = T);
+def Vec2 : (T : imp type is number, x, y = T);
 def vec2_add(a, b = Vec2(i32)) Vec2(i32) => Vec2(a.x+b.x, a.y+b.y);
 def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
 def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # invalid
@@ -1821,15 +1817,15 @@ def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # invalid
 
 If generic behavior is desired use constant arguments:
 ```py
-def Vec2 : (T : imp number, x, y = T);
-def vec2_add(T : imp number, a, b = Vec2(T)) Vec2(T) => Vec2(a.x+b.x, a.y+b.y);
+def Vec2 : (T : imp type is number, x, y = T);
+def vec2_add(T : imp type is number, a, b = Vec2(T)) Vec2(T) => Vec2(a.x+b.x, a.y+b.y);
 def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
 def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # valid
 ```
 
 A struct always has to have at least one variable member:
 ```py
-def Vec2 : (T : imp number, a, b : T); # error: no variable members
+def Vec2 : (T : imp type is number, a, b : T); # error: no variable members
 ```
 
 ### Static constants
@@ -1858,21 +1854,21 @@ def p1 = p0.ONE; # valid
 
 You can access static constants via struct variants:
 ```py
-def Vec2 : (T : number, x, y = T);
+def Vec2 : (T : type is number, x, y = T);
 def Vec2.ONE : Vec2(1, 1);
 def v0 = Vec2(f32).ONE; # in this case a Vec2(i32) is being generated from a Vec2(f32) variant
 ```
 
 Inside static constant initializers, `()` refers to the current struct variant. Use `().<name>` to access constant member values:
 ```py
-def Vec2 : (T : number, x, y = T);
+def Vec2 : (T : type is number, x, y = T);
 def Vec2.ONE : Vec2(1 -> ().T, 1 -> ().T);
 def v0 = Vec2(f32).ONE; # generates an Vec2(f32) with x and y as 1
 ```
 
 If a static constant uses `()`, it must be called only from struct variants. Accessing it via the base struct will cause an error:
 ```py
-def Vec2 : (T : number, x, y = T);
+def Vec2 : (T : type is number, x, y = T);
 def Vec2.ONE : Vec2(1 -> ().T, 1 -> ().T);
 def v0 = Vec2.ONE; # error: 'ONE' can only be accessed via 'Vec2' variants
 ```
@@ -2364,7 +2360,7 @@ def tag_val = ^Some_Union.String; # in this case, tag_val == 1
 
 You can use a specific variant to get the union tag number, but it's not necessary:
 ```py
-def Some_Union : (T : number|Number T|String str|Vector Vec2);
+def Some_Union : (T : type is number|Number T|String str|Vector Vec2);
 def tag_val0 = ^Some_Union(i32).String; # valid, tag_val0 == 0
 def tag_val1 = ^Some_Union.String; # valid, tag_val1 == 0
 ```
@@ -2469,7 +2465,7 @@ Constant members of unions can't really accept `imp`. The reason for this is bec
 An union can only accept struct variants, so if being generic is a desired factor the union will also have to accept the required constant members:
 ```py
 def Vec2 : (T : imp number, x, y = T);
-def Some_Union : (T : number|Int i32|Vec Vec2(T)|);
+def Some_Union : (T : type is number|Int i32|Vec Vec2(T)|);
 ```
 
 ### Unions static constants
@@ -2679,10 +2675,10 @@ To see an in-depth list of all tags held by a `meta` see: [Meta types](#Types-of
 To create a `meta` literal use the `$code` keyword followed by an identifier. When the specified identifier is reached the meta literal ends:
 ```py
 some_code : $code code_end
-  def add : (T : imp number, a, b = T) T => a+b;
-  def sub : (T : imp number, a, b = T) T => a-b;
-  def mul : (T : imp number, a, b = T) T => a*b;
-  def div : (T : imp number, a, b = T) T => a/b;
+  def add : (T : imp type is number, a, b = T) T => a+b;
+  def sub : (T : imp type is number, a, b = T) T => a-b;
+  def mul : (T : imp type is number, a, b = T) T => a*b;
+  def div : (T : imp type is number, a, b = T) T => a/b;
 code_end;
 ```
 
@@ -2690,7 +2686,7 @@ That way nested meta literals are possible:
 ```py
 some_code : $code code_end
   some_code_inside_some_code : $code code2_end
-    def square_from_the_code_inside_the_code : (T : imp number, x = T) T => x*x;
+    def square_from_the_code_inside_the_code : (T : imp type is number, x = T) T => x*x;
   code2_end
 code_end;
 ```
@@ -2734,14 +2730,14 @@ def something : () i32 => @an_actual_expression; # 'something' returns 3 + 4
 You can return metas from ensured-compile-time functions:
 ```py
 def return_code : @() meta => $code end
-  def square(T : number, a = T) T => a*a;
+  def square(T : type is number, a = T) T => a*a;
 end;
 ```
 
 Using the `@` operator on a function that returns a `meta` will not only call the function, but also inject the `meta` AST into the main AST:
 ```py
 def gen_square_fn : @() meta => $code end
-  def square(T : number, a = T) T => a*a;
+  def square(T : type is number, a = T) T => a*a;
 end;
 @gen_square_fn(); # now the square function is defined
 ```
@@ -2749,7 +2745,7 @@ end;
 The `meta.iden` and `meta.expr` also can be passed as constant arguments, this is useful for putting their values directly on code literals:
 ```py
 def gen_fn_with_arg_a : @(fn_name : meta.iden, fn_expr : meta.expr) meta => $code end
-  def $fn_name(T : number, a = T) T => $fn_expr;
+  def $fn_name(T : type is number, a = T) T => $fn_expr;
 end;
 @gen_fn_with_arg_a(square, a * a);
 ```
@@ -3420,13 +3416,150 @@ def _ = *p or returns_void(); #maybe crash
 def _ = *p or nothing; # derreferecing null pointer if 'p' is null
 ```
 
-## Type families
+## Overloads
+An overload is just a set of functions. If a function is on an overload it can be called via the overload itself.
+
+### Overload definitions
+The syntax of an overload is more complicated then the previous ones. First you open and close square brackets `[]`, inside the square brackets you create type patterns. After the pattern brackets you open and close parenthesis `()`, that's where you're going to put the argument list pattern. And lastly, comes the return pattern. An example of a simple overload would be:
+```py
+def some_overload : [](...) ...||...;
+```
+
+#### Type patterns
+A type pattern determines a pattern that can be used on variable argument or return type. The type pattern is defined in a very similar way to a [variable](#Variable-definitions), but it can't have a value and the type must be `_` or a previous defined pattern:
+```py
+def some_overload : [a = _, b = a](a) b;
+```
+
+The type pattern represents a type, it can also be a pointer, slice, view or array (the array length needs to be a constant integer or `_`):
+```py
+def some_overload : [
+  a = *_,
+  b = **_,
+  c = *mut _,
+  d = [3]_,
+  e = [_]_,
+  f = [..]_,
+  g = [..]mut _,
+  h = [*]_,
+  i = [*]mut _
+](a, b, c, d, e, f, g, h) i;
+```
+This isn't all the possible combinations, because the possible combinations are infinite, like on variables where you can have a pointer to a slice of arrays of length 3 of mutable views to some type.
+
+Type patterns must be used inside of the arguments list or the return pattern. Differently from variables and constants, you can't silence the error by putting an underscore as a prefix on the type pattern.
+
+#### Argument list pattern
+The argument list pattern represents how the variable part of an argument list accepted by the overload should look like. An argument can have one of four values:
+- A predefined type pattern: only types that have the same composition as the type pattern can be placed there
+- `_`: any type can be placed there
+- `...`: any number of different types can be placed there. `...` should always appear at the end or not appear at all
+- A type pattern and `...` as a suffix: any number of the specific type can be placed there, differently from just `...`, this pattern doesn't need to appear just at the end
+
+If the argument list pattern is empty, the overload only accept functions with no arguments.
+
+__Examples:__
+
+```py
+def some_overload0 : [a = _](a, _, ...) ...||...;
+```
+The overload above only accept functions that have at least two arguments, with the first one being equivalent to the type in the type pattern 'a' (in this case just any type) and the second one being any type.
+
+```py
+def some_overload1 : [a = _](a, a..., _) ...||...;
+```
+The overload above only accepts functions with one or more arguments with the type in the type pattern 'a' followed by one argument with any type.
+
+As said before a variable pattern represents a type in specific. So when you reuse the same type pattern in an overload, it means that the types of both arguments have to be equivalent:
+```py
+def some_overload : [a = _](a, a) ...||...;
+```
+The overload above only accept functions that have only two arguments, where both arguments are the same type.
+
+#### Return pattern
+The return pattern represents how the return type of a function accepted by the overload should look like. An return type can have one of four values:
+- A predefined type pattern: only types that have the same composition as the type pattern can be place there
+- `_`: any type can be placed there, excluding void
+- `...`: any type can be placed there, including void
+- `void`: only void can be placed there
+
+The return pattern have two values, the return type and the error type. They're separeted by `||`, on the left is the return type and on the right is the error type; like in real functions. The error type can only accept type patterns that have `_` as it's value, that's because return error values only accepts unions or `void`, not pointers, slices, etc:
+
+```py
+def some_overload0 : []() ...||...;
+def some_overload1 : []() void||void;
+def some_overload2 : []() _||_;
+def some_overload3 : [a = _]() a||a;
+def some_overload4 : [a = *_]() a||a; # error: pattern on return error type isn't valid
+```
+
+#### Overload type
+An overload has the `ovl` type, so you can defined it with an explicit type like this:
+```py
+def some_overload : ovl [](...) ...||...;
+```
+The overload above accepts any function.
+
+### Adding functions to overloads
+To add a function to an overload use the `<-` operator:
+```py
+def math : [](...) ...||...;
+def sum3 : (a, b, c = i32) i32 => a + b + c;
+math <- sum3;
+def sum2 : (a, b = i32) i32 => a + b;
+math <- sum2;
+def square : (x = i32) i32 => x * x;
+math <- square;
+def a = math(5, 5, 5) # a == 15
+def b = 5 math 5 # b == 10, infix calls are possible
+def c = math 5; # c == 25, one-paremeter calls are possible
+```
+
+Because functions are just compile-time values, you can assign them directly to an overload:
+```py
+def sum : [a = _](a...) a||void;
+sum <- (a, b = i32) i32 => a + b;
+sum <- (a, b, c = i32) i32 => a + b + c;
+def a = sum(1, 2); # a == 3
+def b = sum(1, 2, 3); # b == 6
+```
+
+### Conflicts and ambiguity on overloads
+If two functions have the same variable argument types in the same order they can't be passed to the same overload set. Even if their return types are distinct:
+```py
+def sum : [](...) ...||...;
+sum <- (a, b = i32) i32 => a + b;
+sum <- (a, b = i32) f32 => (a + b) -> f32; # error: arguments conflict with previous 'sum' overload
+```
+
+If an argument with a default value causes the ambiguity on the overload, it simply can't be put in the overload:
+```py
+def sum : [](...) ...||...;
+sum <- (a, b = i32) i32 => a + b;
+sum <- (a, b = i32, c = i32 0) f32 => a + b + c; # error: default value on argument 'c' causes ambiguity with previous 'sum' overload
+```
+
+### Constant arguments and overloads
+You can only pass a function with constant arguments on overloads if that argument is `imp`:
+```py
+def sum : [a = _](a...) a||void;
+sum <- (T : imp type is number, a, b = T) T => a + b;
+sum <- (T : type is number, a, b, c = T) T => a + b + c; # error: overloads only accepts functions with constant arguments marked as 'imp'
+```
+
+Keep in mind that the more specific overload beats the more generic:
+```py
+def operation : [a = _](a...) a||void;
+operation <- (a, b = i32) i32 => a - b;
+operation <- (T : imp type is number, a, b = T) T => a + b;
+def a = 1.0 operation 2.0; # a == 3.0
+def b = 1 operation 2; # a == -1
+```
+
+### Overloads of overloads
 Work in progress...
 
-## Overload sets
-NOTE: unordered parameters and default values can be a real pain here
-Work in progress...
-### Operators are overload sets
+### Operators are overloads
 Work in progress...
 
 ## Precedence table
@@ -3488,6 +3621,161 @@ Work in progress...
 | 15         | ^=       | Variable assignment by bitwise xor         | Right to Left |
 | 16         | ,        | Comma                                      | Right to Left |
 | 16         | |        | Union pipe                                 | Right to Left |
+
+## Classes
+Classes aren't types like in other programming languages. Classes are just a compile-time group for types. They don't have any specific purpose and can be used to do whatever you want with them. But the main use is type filtering in generics.
+
+To create a class simply sum up different types together:
+```py
+def Num32 : i32+u32;
+```
+
+You can add a type to a class at any time using the `<-` operator:
+```py
+def Num32 : i32+u32;
+Num32 <- f32;
+```
+
+Adding new types into classes modify ([most of](#Unbounded-parent-class)) all later _and_ previous usages.
+
+To create a class from a single type you can use the unary `+`. This is needed because just simply using the type would create a type alias:
+```py
+def Type_Alias : u32;
+def Single_Class : +u32;
+```
+
+A class has the type `class`, and you can use the type explicitly:
+```py
+def Num32 : class i32+u32+f32;
+def Single_Class : class +u32;
+def Empty_Class : class +;
+```
+
+### Child and parent classes
+You can also create classes from a parent class:
+```py
+def Integers : i8+u8+i16+u16+u32+i32+u64+i64+usize+isize;
+def Floats : f32+f64;
+def Numbers : Integers+Floats;
+```
+
+Using the `<-` operator with classes on classes is also possible:
+```py
+def Numbers : i8+u8+i16+u16+u32+i32+u64+i64+usize+isize;
+def Floats : f32+f64;
+Numbers <- Floats;
+```
+
+So to add multiple new types at once you need to create an anonymous class:
+```py
+def Integers : i8+u8+i16+u16+u32+i32+u64+i64;
+Integers <- usize+isize; # an anonymous class is being created from 'usize+isize' 
+```
+
+The child class is bound to the parent one. So if you add a type to the parent class, it'll also be added to the child:
+```py
+def Integers : i8+u8+i16+u16+u32+i32+u64+i64;
+def Floats : f32+f64;
+def Numbers : Integers+Floats;
+Integers <- usize+isize; # now 'Numbers' also have this types
+```
+
+#### Unbounded parent class
+If you don't want the child class to be bound to the parent one, surround the parent class with pipes:
+```py
+def Integers : i8+u8+i16+u16+u32+i32+u64+i64;
+def Floats : typefam(f32);
+def Numbers : [Integers]+Floats;
+Integers <- usize+isize; # 'Numbers' still don't have usize and isize
+Floats <- f64; # 'Numbers' has f64 now
+```
+
+The `[<class>]` will have access to all types in that class until that moment. So, for example:
+```py
+def Integers : u8+u16+u32+u64;
+Integers <- i8+i16+i32+i64;
+def Numbers : [Integers]+f32+f64;
+Integers <- usize+isize;
+```
+`Numbers` will have `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64` and `i64`, but it'll not have `usize` or `isize`.
+
+### Excluding types and class operations
+You can subtract types from classes, this will produce a new class:
+```py
+def Some_Class : i32+u32+f32+f64;
+def Num32 : Some_Class-f64;
+```
+
+You can even subtract types that aren't on that class, this will guarantee that that type will never be a part of the newly created class, even if the parent class add that type later:
+```py
+def Some_Class : i32+u32+f32;
+def Num32 : Some_Class-f64;
+Some_Class <- f64+u64; # Only 'u64' is added to 'Num32'
+```
+
+You can exclude entire classes from a class:
+```py
+def Integers : i8+u8+i16+u16+u32+i32+u64+i64;
+def Signed : i8+i16+i32+i64;
+def Unsigned : Integers-Signed;
+```
+
+You can create a class that only has an excluded type, or class, with the unary `-`:
+```py
+def Not_i32 : -i32;
+Not_i32 <- u32+i32+u64+i64+i8+u8+i16+u16; # All types are added, except 'i32'
+```
+
+If you use parenthesis on a class creation you'll be temporarily creating an anonymous class, so this is possible:
+```py
+def Integers : i8+u8+i16+u16+u32+i32+u64+i64;
+def Unsigned : Integers-(i8+i16+i32+i64);
+```
+
+So all basic `+` and `-` operations that you would expect, works.
+
+### Compile-time types on class
+Classes can accept [compile-time only types](#Compile-time-only-primitive-types). This include `class` itself:
+```py
+Compile_Time_Only : anyi+anyf+type+range+class;
+```
+
+Because classes are a compile-time only concept, there aren't specific rules for compile-time only types.
+
+### The 'is' operator
+The only purpose of the `is` operator is to identify if a type is part of a class. If it isn't a compile time error occur:
+```py
+def Num32 : i32+u32+f32;
+u32 is Num32; # nothing happens
+u64 is Num32; # error: 'u64' isn't part of the 'Num32' class
+```
+
+And you obviously can use `is` on anonymous classes:
+```py
+def Num32 : i32+u32+f32;
+def Num64 : i64+u64+f64;
+u32 is Num32+Num64; # nothing happens
+u64 is Num32+Num64; # nothing happens
+u16 is Num32+Num64; # error: 'u16' isn't part of the 'Num32+Num64' class
+```
+
+`is` generates a compile-time only expression, but it returns void, so it can be used anywhere `void` is expected.
+
+### Class comparison
+You can verify if a type is part of a class with the `<type>==<class>`. This will just return a boolean, `true` if `<type>` is inside of `<class>` and false otherwise:
+```py
+def Num32 : i32+u32+f32;
+def a = u32 == Num32; # a == true
+def b = u64 == Num32; # b == false
+```
+
+### Static constants and overloads on classes
+NOTE: probably some problems with bounding to parent classes
+NOTE: a non-complicated solution: maybe make the static constants and overloads not passable to children classes
+Work in progress...
+
+### Builtin classes
+Work in progress...
 
 ## Namespaces
 Work in progress...
