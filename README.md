@@ -1823,9 +1823,23 @@ def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
 def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # valid
 ```
 
-A struct always has to have at least one variable member:
+If a struct has only constant members it becomes a compile-time only type:
 ```py
-def Vec2 : (T : imp type is number, a, b : T); # error: no variable members
+def Vec2 : (T : imp type is number, a, b : T);
+def a = Vec2(1, 2); # error: 'Vec2' is a compile-time only type and can't be assigned to a variable
+```
+
+This is useful for something like this:
+```py
+def Plugin : (
+  T : imp type,
+  init : fn() T,
+  run : fn(inst = T) void,
+);
+def load_plugin : (P : Plugin) => {
+  def inst = P.init();
+  P.run(inst);
+}
 ```
 
 ### Static constants
@@ -1966,6 +1980,8 @@ def _  = foo(i32); # error: i32 doesn't have static constant 'FOO'
 bar(Foo(1, 2)); # valid
 bar(1); # error: i32 doesn't have static constant 'FOO' nor 'something'
 ```
+
+So functions with generic types actually are duck typed at compile-time.
 
 ### 'take' attribute
 There are times when you want to treat the members of a struct type member as its own. Use the `take` attribute for that:
@@ -3502,13 +3518,13 @@ An overload is just a set of functions. If a function is on an overload it can b
 ### Overload definitions
 The syntax of an overload is more complicated than the previous ones. First you open and close square brackets `[]`, inside the square brackets you create type patterns. After the pattern brackets you open and close parenthesis `()`, that's where you're going to put the argument list pattern. And lastly, comes the return pattern. An example of a simple overload would be:
 ```py
-def some_overload : [](...) ...||...;
+def some_overload : [](_+) +||+;
 ```
 
 #### Type patterns
-A type pattern determines a pattern that can be used on variable argument or return type. The type pattern is defined in a very similar way to a [variable](#Variable-definitions), but it can't have a value and the type must be `_` or a previous defined pattern:
+A type pattern determines a pattern that can be used on variable argument or return type. The type pattern is defined in a very similar way to a [variable](#Variable-definitions), but it can't have a value. You can put any type or class on a type pattern, the `_` identifier (that would mean any type) or a previously defined type pattern.
 ```py
-def some_overload : [a = _, b = a](a) b;
+def some_overload : [a = _, b = u32, c = a](a, b) c||+;
 ```
 
 The type pattern represents a type, it can also be a pointer, slice, view or array (the array length needs to be a constant integer or `_`):
@@ -3523,67 +3539,164 @@ def some_overload : [
   g = [..]mut _,
   h = [*]_,
   i = [*]mut _
-](a, b, c, d, e, f, g, h) i;
+](a, b, c, d, e, f, g, h) i||+;
 ```
 This isn't all the possible combinations, because the possible combinations are infinite, like on variables where you can have a pointer to a slice of arrays of length 3 of mutable views to some type.
+
+This isn't exclusive to the `_` identifier. These type attributes can be used on previously defined type patterns or real external types:
+```py
+def some_overload : [
+  a = *u32,
+  b = **a,
+  c = *mut b,
+  d = [3]i32,
+  e = [_]d,
+  f = [..]f,
+  g = [..]mut f32,
+  h = [*]number,
+  i = [*]mut h
+](a, b, c, d, e, f, g, h) i;
+```
+
+If a type pattern name collides with an external type, the type pattern takes priority:
+```py
+def some_overload [a = u32, u32 = f32, b = u32](a, u32) b||+; # 'a' will be an 'u32' type and 'u32' will be an 'f32' type. because 'b' is defined after 'u32', 'b' will actually be a 'f32' type.
+```
 
 Type patterns must be used inside of the arguments list or the return pattern. Differently from variables and constants, you can't silence the error by putting an underscore as a prefix on the type pattern.
 
 #### Argument list pattern
-The argument list pattern represents how the variable part of an argument list accepted by the overload should look like. An argument can have one of four values:
-- A predefined type pattern: only types that have the same composition as the type pattern can be placed there
-- `_`: any type can be placed there
-- `...`: any number of different types can be placed there. `...` should always appear at the end or not appear at all
-- A type pattern and `...` as a suffix: any number of the specific type can be placed there, differently from just `...`, this pattern doesn't need to appear just at the end
+The argument list pattern represents how the variable part of an argument list accepted by the overload should look like. An argument pattern can be compused by the following (`a` and `b` represents any type patterns):
+- `_`: Any type can be placed there
+- `a`: Only types that have the same composition as the type pattern can be placed there
+- `<pat0>|<pat1>`: both patterns can be placed there. `<pat0>` and `<pat1>` can be of any argument pattern
+- `<pat>*`: that pattern can be placed there 0 or more times. `<pat>` can be of any argument pattern
+- `<pat>+`: that pattern can be placed there 0 or 1 time. `<pat>` can be of any argument pattern
+- `_-<pat>`: Any type expect does bounded to a specific pattern. `<pat>` can be of any argument pattern
+
+The precedence of patterns is:
+1. `a` and `_`
+2. `_-`
+3. `*` and `+`
+4. `|`
+
+You can always wrap things in parentheses to make the pattern take priority.
 
 If the argument list pattern is empty, the overload only accept functions with no arguments.
 
 __Examples:__
-
+Accepts `a` type, then any amount of any type until it finds the same `a` type again:
 ```py
-def some_overload0 : [a = _](a, _, ...) ...||...;
+def some_overload : [a = _](a, _*, a) +||+;
 ```
-The overload above only accept functions that have at least two arguments, with the first one being equivalent to the type in the type pattern 'a' (in this case just any type) and the second one being any type.
 
+Accepts any type excluding `a`:
 ```py
-def some_overload1 : [a = _](a, a..., _) ...||...;
+def some_overload : [a = number](_-a) +||+;
 ```
-The overload above only accepts functions with one or more arguments with the type in the type pattern 'a' followed by one argument with any type.
+
+Accepts `a` or `b` type or no types:
+```py
+def some_overload : [a = u32, b = f32]((a|b)+) +||+;
+```
+
+Accepts any amount of `a` types or `b` one b type:
+```py
+def some_overload : [a = u32, b = f32](a*|b) +||+;
+```
+
+Accepts any amount of `a` types or `b` type one or zero times:
+```py
+def some_overload : [a = u32, b = f32](a*|b+) +||+;
+```
+
+Accepts any amount of any type or `b` type one or zero times, then any amount of any type, then a `a` type:
+```py
+def some_overload : [a = u32, b = f32](_*|b+, _*, a) +||+;
+```
 
 As said before a variable pattern represents a type in specific. So when you reuse the same type pattern in an overload, it means that the types of both arguments have to be equivalent:
 ```py
-def some_overload : [a = _](a, a) ...||...;
+def some_overload : [a = _](a, a) +||+;
 ```
 The overload above only accept functions that have only two arguments, where both arguments are the same type.
 
 #### Return pattern
-The return pattern represents how the return type of a function accepted by the overload should look like. A return type can have one of four values:
-- A predefined type pattern: only types that have the same composition as the type pattern can be place there
+The return pattern represents how the return type of a function accepted by the overload should look like. A return pattern can have one of four values (`a` represents any type pattern):
+- `a`: only types that have the same composition as the type pattern can be place there
 - `_`: any type can be placed there, excluding void
-- `...`: any type can be placed there, including void
+- `+`: any type can be placed there, including void
 - `void`: only void can be placed there
 
-The return pattern have two values, the return type and the error type. They're separated by `||`, on the left is the return type and on the right is the error type; like in real functions. The error type can only accept type patterns that have `_` as it's value, that's because return error values only accepts unions or `void`, not pointers, slices, etc:
-
+The return pattern have two values, the return type and the error type. They're separated by `||`, on the left is the return type and on the right is the error type; like in real functions. The error type can only accept type patterns that have `_` or an union as it's value:
 ```py
-def some_overload0 : []() ...||...;
+def some_overload0 : []() +||+;
 def some_overload1 : []() void||void;
 def some_overload2 : []() _||_;
 def some_overload3 : [a = _]() a||a;
-def some_overload4 : [a = *_]() a||a; # error: pattern on return error type isn't valid
+def some_overload4 : [a = *_]() a||a; # error: pattern on return error pattern isn't valid
+```
+
+#### Putting fuctions directly into an overload
+You can put functions in an overload directly in it's creation. After the overload definition add parenthesis, inside does parenthesis put all functions that you want. If they don't follow the constraints established by the overload an error will occur:
+```py
+def sum2_i32 : (a, b = i32) i32 => a + b;
+def sum3_i32 : (a, b, c = i32) i32 => a + b + c;
+def sum2_f32 : (a, b = f32) f32 => a + b;
+def sum3_f32 : (a, b, c = f32) f32 => a + b + c;
+def sum : [a = number](a*) a||void (sum2_i32, sum3_i32, sum2_f32, sum3_f32);
+```
+
+And because functions are first-class citizens you can pass function literals to `ovl(<funcs>)` directly:
+```py
+def sum : [a = number](a*) a||void (
+  (a, b = i32) i32 => a + b,
+  (a, b, c = i32) i32 => a + b + c,
+  (a, b = f32) f32 => a + b,
+  (a, b, c = f32) f32 => a + b + c,
+);
 ```
 
 #### Overload type
 An overload has the `ovl` type, so you can defined it with an explicit type like this:
 ```py
-def some_overload : ovl [](...) ...||...;
+def some_overload : ovl [](_*) +||+;
 ```
 The overload above accepts any function.
+
+#### Simple overload construct
+If you don't care about constraints you can use the `ovl(<funcs>)` construct, that way you can pass any function to it (ambiguities still produce error):
+```py
+def sum2_i32 : (a, b = i32) i32 => a + b;
+def sum3_i32 : (a, b, c = i32) i32 => a + b + c;
+def sum2_f32 : (a, b = f32) f32 => a + b;
+def sum3_f32 : (a, b, c = f32) f32 => a + b + c;
+def sum : ovl(sum2_i32, sum3_i32, sum2_f32, sum3_f32);
+```
+
+This is sugar for:
+```py
+def sum2_i32 : (a, b = i32) i32 => a + b;
+def sum3_i32 : (a, b, c = i32) i32 => a + b + c;
+def sum2_f32 : (a, b = f32) f32 => a + b;
+def sum3_f32 : (a, b, c = f32) f32 => a + b + c;
+def sum : ovl [](_*) +||+ (sum2_i32, sum3_i32, sum2_f32, sum3_f32);
+```
+
+Putting anonymous functions into the construct still aplies here:
+```py
+def sum : ovl(
+  (a, b = i32) i32 => a + b,
+  (a, b, c = i32) i32 => a + b + c,
+  (a, b = f32) f32 => a + b,
+  (a, b, c = f32) f32 => a + b + c,
+);
+```
 
 ### Adding functions to overloads
 To add a function to an overload use the `<-` operator:
 ```py
-def math : [](...) ...||...;
+def math : [](_*) +||+;
 def sum3 : (a, b, c = i32) i32 => a + b + c;
 math <- sum3;
 def sum2 : (a, b = i32) i32 => a + b;
@@ -3597,7 +3710,7 @@ def c = math 5; # c == 25, one-parameter calls are possible
 
 Because functions are just compile-time values, you can assign them directly to an overload:
 ```py
-def sum : [a = _](a...) a||void;
+def sum : [a = _](a*) a||void;
 sum <- (a, b = i32) i32 => a + b;
 sum <- (a, b, c = i32) i32 => a + b + c;
 def a = sum(1, 2); # a == 3
@@ -3607,14 +3720,14 @@ def b = sum(1, 2, 3); # b == 6
 ### Conflicts and ambiguity on overloads
 If two functions have the same variable argument types in the same order they can't be passed to the same overload. Even if their return types are distinct:
 ```py
-def sum : [](...) ...||...;
+def sum : [](_*) +||+;
 sum <- (a, b = i32) i32 => a + b;
 sum <- (a, b = i32) f32 => (a + b) -> f32; # error: arguments conflict with previous 'sum' overload
 ```
 
 If an argument with a default value causes the ambiguity on the overload, it simply can't be put in the overload:
 ```py
-def sum : [](...) ...||...;
+def sum : [](_*) +||+;
 sum <- (a, b = i32) i32 => a + b;
 sum <- (a, b = i32, c = i32 0) f32 => a + b + c; # error: default value on argument 'c' causes ambiguity with previous 'sum' overload
 ```
@@ -3622,14 +3735,14 @@ sum <- (a, b = i32, c = i32 0) f32 => a + b + c; # error: default value on argum
 ### Constant arguments and overloads
 You can only pass a function with constant arguments on overloads if that argument is `imp`:
 ```py
-def sum : [a = _](a...) a||void;
+def sum : [a = _](a*) a||void;
 sum <- (T : imp type is number, a, b = T) T => a + b;
 sum <- (T : type is number, a, b, c = T) T => a + b + c; # error: overloads only accepts functions with constant arguments marked as 'imp'
 ```
 
 Keep in mind that the more specific overload beats the more generic:
 ```py
-def operation : [a = _](a...) a||void;
+def operation : [a = _](a*) a||void;
 operation <- (a, b = i32) i32 => a - b;
 operation <- (T : imp type is number, a, b = T) T => a + b;
 def a = 1.0 operation 2.0; # a == 3.0
@@ -3637,31 +3750,36 @@ def b = 1 operation 2; # a == -1
 ```
 
 ### Operator overload
-There are a set of builtin overloads that automatically bounds to some operators:
+There are a set of builtin overloads that automatically bounds to some operators. These are it's definitions:
 ```py
-def __add__ : [a = _](a, a) a||...; # plus '+'
-def __sub__ : [a = _](a, a) a||...; # minus '-'
-def __mul__ : [a = _](a, a) a||...; # multiplication '*'
-def __div__ : [a = _](a, a) a||...; # division '/'
-def __mod__ : [a = _](a, a) a||...; # modular '%'
-def __addeq__ : [a = _, b = *_](b, a) void||...; # plus equals '+='
-def __subeq__ : [a = _, b = *_](b, a) void||...; # minus equals '-='
-def __muleq__ : [a = _, b = *_](b, a) void||...; # multiplication equals '*='
-def __diveq__ : [a = _, b = *_](b, a) void||...; # division equals '/='
-def __modeq__ : [a = _, b = *_](b, a) void||...; # modular equals '%='
-def __pinc__ : [a = *mut _](a) void||...; # prefix increment '++', returns void
-def __pdec__ : [a = *mut _](a) void||...; # prefix decrement '--', returns void
-def __sinc__ : [a = *mut _](a) void||...; # suffix increment '++', returns void
-def __sdec__ : [a = *mut _](a) void||...; # suffix decrement '--', returns void
-def __epinc__ : [a = *mut _](a) a||...; # prefix increment '++', returns expression value
-def __epdec__ : [a = *mut _](a) a||...; # prefix decrement '--', returns expression value
-def __esinc__ : [a = *mut _](a) a||...; # suffix increment '++', returns expression value
-def __esdec__ : [a = *mut _](a) a||...; # suffix decrement '--', returns expression value
-def __gind__ : [a = _, b = _, c = *_](c, b) a||...; # index get []
-def __sind__ : [a = *mut _, b = _](a, b) a||...; # index set []
+def __add__ : [a = _](a, a) a||+; # plus '+'
+def __sub__ : [a = _](a, a) a||+; # minus '-'
+def __mul__ : [a = _](a, a) a||+; # multiplication '*'
+def __div__ : [a = _](a, a) a||+; # division '/'
+def __mod__ : [a = _](a, a) a||+; # modular '%'
+def __addeq__ : [a = _, b = *_](b, a) void||+; # plus equals '+=', returns void
+def __subeq__ : [a = _, b = *_](b, a) void||+; # minus equals '-=', returns void
+def __muleq__ : [a = _, b = *_](b, a) void||+; # multiplication equals '*=', returns void
+def __diveq__ : [a = _, b = *_](b, a) void||+; # division equals '/=', returns void
+def __modeq__ : [a = _, b = *_](b, a) void||+; # modular equals '%=', returns void
+def __addeqe__ : [a = _, b = *_](b, a) a||+; # plus equals '+=', returns expression value
+def __subeqe__ : [a = _, b = *_](b, a) a||+; # minus equals '-=', returns expression value
+def __muleqe__ : [a = _, b = *_](b, a) a||+; # multiplication equals '*=', returns expression value
+def __diveqe__ : [a = _, b = *_](b, a) a||+; # division equals '/=', returns expression value
+def __modeqe__ : [a = _, b = *_](b, a) a||+; # modular equals '%=', returns expression value
+def __incp__ : [a = *mut _](a) void||+; # prefix increment '++', returns void
+def __decp__ : [a = *mut _](a) void||+; # prefix decrement '--', returns void
+def __incs__ : [a = *mut _](a) void||+; # suffix increment '++', returns void
+def __decs__ : [a = *mut _](a) void||+; # suffix decrement '--', returns void
+def __incpe__ : [a = *mut _](a) a||+; # prefix increment '++', returns expression value
+def __decpe__ : [a = *mut _](a) a||+; # prefix decrement '--', returns expression value
+def __incse__ : [a = *mut _](a) a||+; # suffix increment '++', returns expression value
+def __decse__ : [a = *mut _](a) a||+; # suffix decrement '--', returns expression value
+def __indg__ : [a = _, b = _, c = *_](c, b) a||+; # index get []
+def __inds__ : [a = *mut _, b = _](a, b) a||+; # index set []
 ```
 
-The operators that can be overloaded is limited for mathematical concepts or data structure indexing. Do not abuse this feature.
+The operators that can be overloaded are limited to mathematical operations or data structure indexing. Do not abuse this feature.
 
 ## Classes
 Classes aren't types like in other programming languages. Classes are just a compile-time group for types. They don't have any specific purpose and can be used to do whatever you want with them. But the main use is type filtering in generics.
@@ -3739,6 +3857,14 @@ def Numbers : [Integers]+f32+f64;
 Integers <- usize+isize;
 ```
 `Numbers` will have `u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64` and `i64`, but it'll not have `usize` or `isize`.
+
+### Intersection between classes
+You can make a class be the intersection between two different classes with the `&` operator:
+```py
+def Readable : File+Buffer+str+cstr;
+def Writable : File+Buffer+Socket;
+def ReadWrite : Readable&Writable; # ReadWrite will have types 'File' and 'Buffer'
+```
 
 ### Excluding types and class operations
 You can subtract types from classes, this will produce a new class:
