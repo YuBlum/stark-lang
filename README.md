@@ -1948,6 +1948,25 @@ def Vec2 : (
 
 This is not recommended if the intention is method behavior because: it'll waste memory, it'll be slower than methods because of function pointer derreferencing, the method-like call will not work and the member it's not garanteed to always have the same beahvior even with `imm`.
 
+#### Generics and static constants
+When you define a function with a constant argument, what you're actually doing is creating a template. So if you try to access a static constant from a generic type of a function the function will simply assume that the type has the static constant. The same thing applies on method-like call:
+```py
+def foo : (T : type) u64 => {
+  def a = T.FOO;
+  ret something() * T.FOO; # because of the usage 'T.FOO' is implied to u64, same thing for 'a' 
+};
+def bar : (T : imp type, a = T) => {
+  a.something(T.FOO); # 'T.something' is expected to be able to receive 'T.FOO' as it's first argument
+};
+def Foo : (a, b = i32);
+def Foo.FOO : 1;
+def Foo.something : (x = i32) => ...;
+def _  = foo(Foo); # valid
+def _  = foo(i32); # error: i32 doesn't have static constant 'FOO'
+bar(Foo(1, 2)); # valid
+bar(1); # error: i32 doesn't have static constant 'FOO' nor 'something'
+```
+
 ### 'take' attribute
 There are times when you want to treat the members of a struct type member as its own. Use the `take` attribute for that:
 ```py
@@ -3204,7 +3223,7 @@ for i in 0..@len(pos) => do_stuff(pos[i].y);
 ```
 
 #### Iterators
-Iterators are just types that have the static constant `IS_ITER` set. It can be set to anything, but `true` is recommended for readability.
+Iterators are just types that are part of the `iterator` [class](#Classes).
 
 An iterator has to have one or more of the methods: `next`, `mnext`, `rnext` and `rmnext`.
 - If it has `next` it'll work on normal `for` loops
@@ -3218,6 +3237,7 @@ If it has `next` or `mnext` a `has_next` is mandatory. And if it has `rnext` or 
 
 The `next`, `mnext`, `has_next`, `rnext`, `rmnext` and `has_rnext` methods should look like this:
 ```py
+iterator <- Some_Iter;
 def Some_Iter.next : (self = *Some_Iter) (i64, *<some-type>) => ...;
 def Some_Iter.mnext : (self = *mut Some_Iter) (i64, *mut <some-type>) => ...;
 def Some_Iter.has_next : (self = *Some_Iter) bool => ...;
@@ -3227,7 +3247,7 @@ def Some_Iter.has_rnext : (self = *Some_Iter) bool => ...;
 ```
 `<some-type>` can be of any type you want. The index type can be any type of integer that you want.
 
-If the `IS_ITER` static constant isn't set, you can add an `iter` method. This way you can still put a variable with that type on a for loop.
+If the type isn't part of the `iterator` class, you can add an `iter` method. This way you can still put a variable with that type on a for loop.
 
 The `iter` method should look like this:
 ```py
@@ -3416,152 +3436,6 @@ def _ = *p or returns_void(); #maybe crash
 def _ = *p or nothing; # derreferecing null pointer if 'p' is null
 ```
 
-## Overloads
-An overload is just a set of functions. If a function is on an overload it can be called via the overload itself.
-
-### Overload definitions
-The syntax of an overload is more complicated then the previous ones. First you open and close square brackets `[]`, inside the square brackets you create type patterns. After the pattern brackets you open and close parenthesis `()`, that's where you're going to put the argument list pattern. And lastly, comes the return pattern. An example of a simple overload would be:
-```py
-def some_overload : [](...) ...||...;
-```
-
-#### Type patterns
-A type pattern determines a pattern that can be used on variable argument or return type. The type pattern is defined in a very similar way to a [variable](#Variable-definitions), but it can't have a value and the type must be `_` or a previous defined pattern:
-```py
-def some_overload : [a = _, b = a](a) b;
-```
-
-The type pattern represents a type, it can also be a pointer, slice, view or array (the array length needs to be a constant integer or `_`):
-```py
-def some_overload : [
-  a = *_,
-  b = **_,
-  c = *mut _,
-  d = [3]_,
-  e = [_]_,
-  f = [..]_,
-  g = [..]mut _,
-  h = [*]_,
-  i = [*]mut _
-](a, b, c, d, e, f, g, h) i;
-```
-This isn't all the possible combinations, because the possible combinations are infinite, like on variables where you can have a pointer to a slice of arrays of length 3 of mutable views to some type.
-
-Type patterns must be used inside of the arguments list or the return pattern. Differently from variables and constants, you can't silence the error by putting an underscore as a prefix on the type pattern.
-
-#### Argument list pattern
-The argument list pattern represents how the variable part of an argument list accepted by the overload should look like. An argument can have one of four values:
-- A predefined type pattern: only types that have the same composition as the type pattern can be placed there
-- `_`: any type can be placed there
-- `...`: any number of different types can be placed there. `...` should always appear at the end or not appear at all
-- A type pattern and `...` as a suffix: any number of the specific type can be placed there, differently from just `...`, this pattern doesn't need to appear just at the end
-
-If the argument list pattern is empty, the overload only accept functions with no arguments.
-
-__Examples:__
-
-```py
-def some_overload0 : [a = _](a, _, ...) ...||...;
-```
-The overload above only accept functions that have at least two arguments, with the first one being equivalent to the type in the type pattern 'a' (in this case just any type) and the second one being any type.
-
-```py
-def some_overload1 : [a = _](a, a..., _) ...||...;
-```
-The overload above only accepts functions with one or more arguments with the type in the type pattern 'a' followed by one argument with any type.
-
-As said before a variable pattern represents a type in specific. So when you reuse the same type pattern in an overload, it means that the types of both arguments have to be equivalent:
-```py
-def some_overload : [a = _](a, a) ...||...;
-```
-The overload above only accept functions that have only two arguments, where both arguments are the same type.
-
-#### Return pattern
-The return pattern represents how the return type of a function accepted by the overload should look like. An return type can have one of four values:
-- A predefined type pattern: only types that have the same composition as the type pattern can be place there
-- `_`: any type can be placed there, excluding void
-- `...`: any type can be placed there, including void
-- `void`: only void can be placed there
-
-The return pattern have two values, the return type and the error type. They're separeted by `||`, on the left is the return type and on the right is the error type; like in real functions. The error type can only accept type patterns that have `_` as it's value, that's because return error values only accepts unions or `void`, not pointers, slices, etc:
-
-```py
-def some_overload0 : []() ...||...;
-def some_overload1 : []() void||void;
-def some_overload2 : []() _||_;
-def some_overload3 : [a = _]() a||a;
-def some_overload4 : [a = *_]() a||a; # error: pattern on return error type isn't valid
-```
-
-#### Overload type
-An overload has the `ovl` type, so you can defined it with an explicit type like this:
-```py
-def some_overload : ovl [](...) ...||...;
-```
-The overload above accepts any function.
-
-### Adding functions to overloads
-To add a function to an overload use the `<-` operator:
-```py
-def math : [](...) ...||...;
-def sum3 : (a, b, c = i32) i32 => a + b + c;
-math <- sum3;
-def sum2 : (a, b = i32) i32 => a + b;
-math <- sum2;
-def square : (x = i32) i32 => x * x;
-math <- square;
-def a = math(5, 5, 5) # a == 15
-def b = 5 math 5 # b == 10, infix calls are possible
-def c = math 5; # c == 25, one-paremeter calls are possible
-```
-
-Because functions are just compile-time values, you can assign them directly to an overload:
-```py
-def sum : [a = _](a...) a||void;
-sum <- (a, b = i32) i32 => a + b;
-sum <- (a, b, c = i32) i32 => a + b + c;
-def a = sum(1, 2); # a == 3
-def b = sum(1, 2, 3); # b == 6
-```
-
-### Conflicts and ambiguity on overloads
-If two functions have the same variable argument types in the same order they can't be passed to the same overload set. Even if their return types are distinct:
-```py
-def sum : [](...) ...||...;
-sum <- (a, b = i32) i32 => a + b;
-sum <- (a, b = i32) f32 => (a + b) -> f32; # error: arguments conflict with previous 'sum' overload
-```
-
-If an argument with a default value causes the ambiguity on the overload, it simply can't be put in the overload:
-```py
-def sum : [](...) ...||...;
-sum <- (a, b = i32) i32 => a + b;
-sum <- (a, b = i32, c = i32 0) f32 => a + b + c; # error: default value on argument 'c' causes ambiguity with previous 'sum' overload
-```
-
-### Constant arguments and overloads
-You can only pass a function with constant arguments on overloads if that argument is `imp`:
-```py
-def sum : [a = _](a...) a||void;
-sum <- (T : imp type is number, a, b = T) T => a + b;
-sum <- (T : type is number, a, b, c = T) T => a + b + c; # error: overloads only accepts functions with constant arguments marked as 'imp'
-```
-
-Keep in mind that the more specific overload beats the more generic:
-```py
-def operation : [a = _](a...) a||void;
-operation <- (a, b = i32) i32 => a - b;
-operation <- (T : imp type is number, a, b = T) T => a + b;
-def a = 1.0 operation 2.0; # a == 3.0
-def b = 1 operation 2; # a == -1
-```
-
-### Overloads of overloads
-Work in progress...
-
-### Operators are overloads
-Work in progress...
-
 ## Precedence table
 | Precedence | Operator | Description                                | Associativity |
 |------------|----------|--------------------------------------------|---------------|
@@ -3621,6 +3495,173 @@ Work in progress...
 | 15         | ^=       | Variable assignment by bitwise xor         | Right to Left |
 | 16         | ,        | Comma                                      | Right to Left |
 | 16         | |        | Union pipe                                 | Right to Left |
+
+## Overloads
+An overload is just a set of functions. If a function is on an overload it can be called via the overload itself.
+
+### Overload definitions
+The syntax of an overload is more complicated than the previous ones. First you open and close square brackets `[]`, inside the square brackets you create type patterns. After the pattern brackets you open and close parenthesis `()`, that's where you're going to put the argument list pattern. And lastly, comes the return pattern. An example of a simple overload would be:
+```py
+def some_overload : [](...) ...||...;
+```
+
+#### Type patterns
+A type pattern determines a pattern that can be used on variable argument or return type. The type pattern is defined in a very similar way to a [variable](#Variable-definitions), but it can't have a value and the type must be `_` or a previous defined pattern:
+```py
+def some_overload : [a = _, b = a](a) b;
+```
+
+The type pattern represents a type, it can also be a pointer, slice, view or array (the array length needs to be a constant integer or `_`):
+```py
+def some_overload : [
+  a = *_,
+  b = **_,
+  c = *mut _,
+  d = [3]_,
+  e = [_]_,
+  f = [..]_,
+  g = [..]mut _,
+  h = [*]_,
+  i = [*]mut _
+](a, b, c, d, e, f, g, h) i;
+```
+This isn't all the possible combinations, because the possible combinations are infinite, like on variables where you can have a pointer to a slice of arrays of length 3 of mutable views to some type.
+
+Type patterns must be used inside of the arguments list or the return pattern. Differently from variables and constants, you can't silence the error by putting an underscore as a prefix on the type pattern.
+
+#### Argument list pattern
+The argument list pattern represents how the variable part of an argument list accepted by the overload should look like. An argument can have one of four values:
+- A predefined type pattern: only types that have the same composition as the type pattern can be placed there
+- `_`: any type can be placed there
+- `...`: any number of different types can be placed there. `...` should always appear at the end or not appear at all
+- A type pattern and `...` as a suffix: any number of the specific type can be placed there, differently from just `...`, this pattern doesn't need to appear just at the end
+
+If the argument list pattern is empty, the overload only accept functions with no arguments.
+
+__Examples:__
+
+```py
+def some_overload0 : [a = _](a, _, ...) ...||...;
+```
+The overload above only accept functions that have at least two arguments, with the first one being equivalent to the type in the type pattern 'a' (in this case just any type) and the second one being any type.
+
+```py
+def some_overload1 : [a = _](a, a..., _) ...||...;
+```
+The overload above only accepts functions with one or more arguments with the type in the type pattern 'a' followed by one argument with any type.
+
+As said before a variable pattern represents a type in specific. So when you reuse the same type pattern in an overload, it means that the types of both arguments have to be equivalent:
+```py
+def some_overload : [a = _](a, a) ...||...;
+```
+The overload above only accept functions that have only two arguments, where both arguments are the same type.
+
+#### Return pattern
+The return pattern represents how the return type of a function accepted by the overload should look like. A return type can have one of four values:
+- A predefined type pattern: only types that have the same composition as the type pattern can be place there
+- `_`: any type can be placed there, excluding void
+- `...`: any type can be placed there, including void
+- `void`: only void can be placed there
+
+The return pattern have two values, the return type and the error type. They're separated by `||`, on the left is the return type and on the right is the error type; like in real functions. The error type can only accept type patterns that have `_` as it's value, that's because return error values only accepts unions or `void`, not pointers, slices, etc:
+
+```py
+def some_overload0 : []() ...||...;
+def some_overload1 : []() void||void;
+def some_overload2 : []() _||_;
+def some_overload3 : [a = _]() a||a;
+def some_overload4 : [a = *_]() a||a; # error: pattern on return error type isn't valid
+```
+
+#### Overload type
+An overload has the `ovl` type, so you can defined it with an explicit type like this:
+```py
+def some_overload : ovl [](...) ...||...;
+```
+The overload above accepts any function.
+
+### Adding functions to overloads
+To add a function to an overload use the `<-` operator:
+```py
+def math : [](...) ...||...;
+def sum3 : (a, b, c = i32) i32 => a + b + c;
+math <- sum3;
+def sum2 : (a, b = i32) i32 => a + b;
+math <- sum2;
+def square : (x = i32) i32 => x * x;
+math <- square;
+def a = math(5, 5, 5) # a == 15
+def b = 5 math 5 # b == 10, infix calls are possible
+def c = math 5; # c == 25, one-parameter calls are possible
+```
+
+Because functions are just compile-time values, you can assign them directly to an overload:
+```py
+def sum : [a = _](a...) a||void;
+sum <- (a, b = i32) i32 => a + b;
+sum <- (a, b, c = i32) i32 => a + b + c;
+def a = sum(1, 2); # a == 3
+def b = sum(1, 2, 3); # b == 6
+```
+
+### Conflicts and ambiguity on overloads
+If two functions have the same variable argument types in the same order they can't be passed to the same overload. Even if their return types are distinct:
+```py
+def sum : [](...) ...||...;
+sum <- (a, b = i32) i32 => a + b;
+sum <- (a, b = i32) f32 => (a + b) -> f32; # error: arguments conflict with previous 'sum' overload
+```
+
+If an argument with a default value causes the ambiguity on the overload, it simply can't be put in the overload:
+```py
+def sum : [](...) ...||...;
+sum <- (a, b = i32) i32 => a + b;
+sum <- (a, b = i32, c = i32 0) f32 => a + b + c; # error: default value on argument 'c' causes ambiguity with previous 'sum' overload
+```
+
+### Constant arguments and overloads
+You can only pass a function with constant arguments on overloads if that argument is `imp`:
+```py
+def sum : [a = _](a...) a||void;
+sum <- (T : imp type is number, a, b = T) T => a + b;
+sum <- (T : type is number, a, b, c = T) T => a + b + c; # error: overloads only accepts functions with constant arguments marked as 'imp'
+```
+
+Keep in mind that the more specific overload beats the more generic:
+```py
+def operation : [a = _](a...) a||void;
+operation <- (a, b = i32) i32 => a - b;
+operation <- (T : imp type is number, a, b = T) T => a + b;
+def a = 1.0 operation 2.0; # a == 3.0
+def b = 1 operation 2; # a == -1
+```
+
+### Operator overload
+There are a set of builtin overloads that automatically bounds to some operators:
+```py
+def __add__ : [a = _](a, a) a||...; # plus '+'
+def __sub__ : [a = _](a, a) a||...; # minus '-'
+def __mul__ : [a = _](a, a) a||...; # multiplication '*'
+def __div__ : [a = _](a, a) a||...; # division '/'
+def __mod__ : [a = _](a, a) a||...; # modular '%'
+def __addeq__ : [a = _, b = *_](b, a) void||...; # plus equals '+='
+def __subeq__ : [a = _, b = *_](b, a) void||...; # minus equals '-='
+def __muleq__ : [a = _, b = *_](b, a) void||...; # multiplication equals '*='
+def __diveq__ : [a = _, b = *_](b, a) void||...; # division equals '/='
+def __modeq__ : [a = _, b = *_](b, a) void||...; # modular equals '%='
+def __pinc__ : [a = *mut _](a) void||...; # prefix increment '++', returns void
+def __pdec__ : [a = *mut _](a) void||...; # prefix decrement '--', returns void
+def __sinc__ : [a = *mut _](a) void||...; # suffix increment '++', returns void
+def __sdec__ : [a = *mut _](a) void||...; # suffix decrement '--', returns void
+def __epinc__ : [a = *mut _](a) a||...; # prefix increment '++', returns expression value
+def __epdec__ : [a = *mut _](a) a||...; # prefix decrement '--', returns expression value
+def __esinc__ : [a = *mut _](a) a||...; # suffix increment '++', returns expression value
+def __esdec__ : [a = *mut _](a) a||...; # suffix decrement '--', returns expression value
+def __gind__ : [a = _, b = _, c = *_](c, b) a||...; # index get []
+def __sind__ : [a = *mut _, b = _](a, b) a||...; # index set []
+```
+
+The operators that can be overloaded is limited for mathematical concepts or data structure indexing. Do not abuse this feature.
 
 ## Classes
 Classes aren't types like in other programming languages. Classes are just a compile-time group for types. They don't have any specific purpose and can be used to do whatever you want with them. But the main use is type filtering in generics.
@@ -3768,11 +3809,6 @@ def Num32 : i32+u32+f32;
 def a = u32 == Num32; # a == true
 def b = u64 == Num32; # b == false
 ```
-
-### Static constants and overloads on classes
-NOTE: probably some problems with bounding to parent classes
-NOTE: a non-complicated solution: maybe make the static constants and overloads not passable to children classes
-Work in progress...
 
 ### Builtin classes
 Work in progress...
