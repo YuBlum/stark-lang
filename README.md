@@ -26,16 +26,6 @@ def func_name : (arg0 = type0, arg1 = type1, ...) return_type => func_body_expr;
 
 Functions always returns the expression at the function body result.
 
-Identifiers have to start with an underscore or any letter, followed by an n amount of underscores, letters or numbers:
-```py
-a # valid identifier
-_a # valid identifier
-abc__0123 # valid identifier
-0a # invalid identifier
-```
-
-[The `_` identifier is reserved](#Unused-variables-and-the-_-identifier)
-
 A basic function that returns a sum of two numbers would be defined as:
 ```py
 def sum : (a = i32, b = i32) i32 => a + b;
@@ -70,6 +60,17 @@ Trailing commas are allowed:
 def foo : (x = i32, y = i32, z = i32,) i32 => x+y+z;
 def _ = foo(1, 2, 3,);
 ```
+
+### Identifier naming rules
+Identifiers have to start with an underscore or any letter, followed by an n amount of underscores, letters or numbers:
+```py
+a # valid identifier
+_a # valid identifier
+abc__0123 # valid identifier
+0a # invalid identifier
+```
+
+[The `_` identifier is reserved](#Unused-variables-and-the-_-identifier)
 
 ### Unused arguments
 Unused arguments causes a compile-time error:
@@ -315,8 +316,8 @@ def y = foo(x); # invalid, x isn't a constant
 
 Constant arguments always have to be the first ones in a function:
 ```py
-def foo : (var = i32, const : u64) =>; # invalid
-def foo : (const : u64, var = i32) =>; # valid
+def foo : (variable = i32, constant : u64) =>; # invalid
+def foo : (constant : u64, variable = i32) =>; # valid
 ```
 
 Constant arguments are the only place where you don't need to specify the constant value on definition (see more on [the constants section](#Constants)):
@@ -583,25 +584,25 @@ Variables can't have the function types, only constants. For variables use funct
 To assign a function pointer to a variable you take its address:
 ```py
 def foo : () =>;
-def var = &foo;
+def a = &foo;
 ```
 
 This would be an error:
 ```py
 def foo : () =>;
-def var = foo; # error: trying to assign function type to variable
+def a = foo; # error: trying to assign function type to variable
 ```
 
 Function literals can be assigned directly to variables if you take its address:
 ```py
-def var = &(x = i32) i32 => x*x;
+def a = &(x = i32) i32 => x*x;
 ```
 
 The code above is basically creating an anonymous function and assigning its address to the variable.
 
 You can't use recursion on functions assigned directly to variables because they're anonymous:
 ```py
-def var = &(x = i32) i32 => var(x)*x; # error: var is undefined
+def a = &(x = i32) i32 => a(x)*x; # error: a is undefined
 ```
 
 Function pointers can't have constant arguments. To get a function pointer from a function with constant arguments you have to do the following:
@@ -623,9 +624,8 @@ There are basically three ways of passing functions as arguments:
 1. Function pointers
 2. Constant arguments with function type
 3. Constant arguments with [overload](#Overloads) type
-TODO: This overload syntax is problably gonna change
 ```py
-def some_overload : ol|a is number|(a, a) a;
+def some_overload : [a = number](a, a) a;
 def foo : (fn = *(i32, i32) i32, x, y = i32) i32 => fn(x, y);
 def bar : (fn : function, x, y = i32) i32 => fn(x, y);
 def bar : (fn : some_overload, x, y = i32) i32 => fn(x, y);
@@ -817,6 +817,21 @@ x++; # exatcly the same as ++x
 ++x; # exatcly the same as x++
 def y = (x++); # assign x to y then increment x
 def y = (++x); # increment x then assign x to y
+```
+
+### Variable aliasing
+You can create an alias to a variable using a constant with type `var`:
+```py
+def x = mut i32;
+def y : var x;
+def _ = &y == &x; # true, both are variables of the same type with the same address
+```
+
+The mutability will remain the same on the `alias`. It's literally the same variable just being referenced by a different identifier:
+```py
+def x = mut i32;
+def y : var x;
+y = 10; # x == 10
 ```
 
 ### Unused variables and the '_' identifier
@@ -3980,7 +3995,7 @@ def _ = some_space.sum(1, 2);
 ```
 
 ### Space privacy
-Everything inside of a space is `pub` by default, so the `pub` attribute doesn't really do anything. But you can mark them as `prv` to be only accessable inside the space itself:
+Everything inside of a space is public by default, so the `pub` attribute doesn't really do anything. But you can mark them as `prv` to be only accessable inside the space itself:
 ```py
 def some_space : {
   prv def mul : (x, y = f32) f32 => x+y;
@@ -4027,7 +4042,7 @@ def mul : some_space.mul;
 def div : some_space.div;
 ```
 
-And the function that takes a space an a slice of identifiers will make a bind only for those specific identifiers:
+And the function that takes a space and a slice of identifiers will make a bind only for those specific identifiers:
 ```py
 def some_space : {
   def add : (x, y = i32) i32 => x+y;
@@ -4057,21 +4072,160 @@ def add : some_space.add;
 ```
 
 ## Modules
-Work in progress...
-### Dividing a module into multiple files
-Work in progress...
-### Build system and linking
-Work in progress...
-### Importing
+Every `.sk` file is a module. A module is a collection of symbols (global variables and constants).
+
+The file name will be the module name, and as such it must follow the [identifier naming rules](#Identifier-naming-rules). If it don't it simply can't be used by other modules with the `ext` keyword or even compiled, effectively becoming useless. 
+
+### External module symbols
+You can get am external module symbol using the `ext` keyword. The `ext` keyword must be followed by a valid locatable module or bundle. Then you can get the symbols from it like if it was a [space](#Spaces):
 ```py
-ext std.base.import "std.base" use all;
+# external module called 'mod'
+pub def ONE : 1;
+# main module
+def ONE : ext mod.ONE; # ONE == 1
 ```
-Work in progress...
+
+An `ext` with just a module name is invalid:
+```py
+def ONE : ext mod; # error: no symbol provided in 'ext'
+```
+
+### Module privacy
+Opposite from [spaces](#Space-privacy), module symbols are always private by default, so the `prv` attribute is the one that actually doesn't do anything. If you want a symbol to be visible and used by external modules add the `pub` attribute:
+```py
+# external module called 'mod'
+prv def mul : (x, y = f32) f32 => x+y; # 'prv' isn't really needed
+pub def dot : (x0,y0, x1,y1 = f32) f32 => x0 mul x1 + y0 mul y1;
+# main module
+def _ = ext mod.dot(1.0, 2.0, 3.0, 4.0);
+def _ = ext mod.mul(1.0, 2.0); # error: 'mul' is private
+```
+
+### Importing
+To import all of the public symbols of a module automaticaly use the builtin `import` function:
+```py
+# external module called 'mod'
+pub def add : (x, y = i32) i32 => x+y;
+pub def sub : (x, y = i32) i32 => x-y;
+pub def mul : (x, y = i32) i32 => x*y;
+pub def div : (x, y = i32) i32 => x/y;
+# main module
+def mod : @import "mod";
+def a = mod.add(1, 2); # a == 3
+```
+
+What this function actually do is create a space with bindings to all public symbols of a module. So the `def mod : @import "mod"` above actualy translates to this:
+```py
+def mod : {
+  def add : ext mod.add;
+  def sub : ext mod.sub;
+  def mul : ext mod.mul;
+  def div : ext mod.div;
+};
+def a = mod.add(1, 2); # a == 3
+```
+
+Because the `import` function returns a space you can name it whatever you want. This is good to avoid conflicts:
+```py
+some_module : @import "mod";
+def a = some_module.add(1, 2); # a == 3
+```
+
+You can even pass it to the [`use`](#The-use-overload) overload directly:
+```py
+@use @import "mod";
+def a = add(1, 2); # a == 3
+```
+
+### Bundles
+A bundle is just a directory with `.sk` Stark source files in it.
+
+Similarly the file name of modules, the directory name will be the bundle name, and it must follow the [identifier naming rules](#Identifier-naming-rules). If it don't it simply can't be used with the `ext` keyword.
+
+As said before: ["The `ext` keyword must be followed by a valid locatable module or bundle"](#External-module-symbols). If the `ext` is followed by a bundle them it must be followed by the specific module that you want:
+```py
+def _ = ext bundle.mod.ONE;
+def _ = ext bundle; # error: no module provided in 'ext'
+```
+
+You can also use bundles on the `import` function:
+```py
+def mod : @import "bundle.mod";
+def _  = mod.ONE; # valid
+```
+
+### Building
+To compile a Stark project simply run in your shell:
+```
+stark <path/to/project/>
+```
+
+The Stark compiler will search for a `main.sk` inside the provided path.
+
+In Stark there is no build system. The compiler automatically detect the correct modules to compile based on the `ext` expressions around your project.
+
+There are two places that the compiler search for modules and bundles when you use `ext`:
+1. Inside a subdirectory called `ext` located in the same directory as the `main.sk`. This directory is known as the local `ext`
+2. Inside a subdirectory called `ext` located in the same directory as the stark compiler. This directory is known as the shared `ext`
+
+If a bundle or module name collides with another one between the two `ext` directories, the local `ext` takes priority.
+
+You can access the absolute path of both of those directories via two predefined constants:
+- For the shared `ext`: `__ext_shared_path__`
+- For the local `ext`: `__ext_local_path__`
+
+#### Dynamic model loading
+You can compile a project into a `.sko` file. `sko` stands for Stark Object file. This file has a header with metadata info about symbols and a shared library in it. You can later use it to hot reload code using the [`std.hot`](#Hot-reloading-module) module.
+
+To compile a project into a `.sko` instead of an executable use the `-obj` flag.
+
+### The base module
+All of the bultin functions stated before, like `len`, `use` or `import`, aren't bultin into the language, but actualy part of a module on the [standard bundle](#Standard-bundle) called `base`. The following line is added by default at the top of every module:
+```py
+@ext std.base.use(@ext std.base.import("std.base"));
+```
+
+This uses the `use` overload and `import` function directly from the `std.base` module to import all symbols from `std.base`.
+
+In other words, everything inside `std.base` is available by default.
+
+Keep in mind that because that line is added by default and the local `ext` has priority over the shared `ext`, if you create your own `std` bundle it'll cause an error if it doesn't have a `base` module in it with `use` and `import` functions.
+
+You can add the `-nobase` flag to the compiler, that way that line isn't added by default and you are free to not have a `base` module inside your custom `std` bundle.
+
+### Dividing a module into multiple files
+You can divide one module into multiple files by using a `.sks` Stark space file. You can import this files into the module using the builtin `include` function. The entire file will be put inside of a space:
+```py
+# math.sks
+def add : (x, y = i32) i32 => x+y;
+def sub : (x, y = i32) i32 => x-y;
+def mul : (x, y = i32) i32 => x*y;
+def div : (x, y = i32) i32 => x/y;
+# main module
+def math : @include "math";
+```
+
+This will literaly translate to:
+```py
+def math : {
+  def add : (x, y = i32) i32 => x+y;
+  def sub : (x, y = i32) i32 => x-y;
+  def mul : (x, y = i32) i32 => x*y;
+  def div : (x, y = i32) i32 => x/y;
+};
+```
+
+The reason why `.sks` is used for the extension of those separate space files is to avoid confusion. There's one key difference between a space and a module and that is their default privace: All modules have their symbols as private by default and all spaces have their symbols as public by default.
+
+The search path for those `.sks` files is the directory in which the module that they are being included to is located.
 
 ## FFI
 Work in progress...
 
-## Standard module
+## EBNF
+Work in progress...
+
+## Standard bundle
 ### Base module
 Work in progress...
 
@@ -4084,6 +4238,9 @@ Work in progress...
 
 ### String module
 NOTE: String builder
+Work in progress...
+
+### Hot reloading module
 Work in progress...
 
 ### OS module
