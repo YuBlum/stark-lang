@@ -4,10 +4,8 @@ A language for systems programming.
 Current version: 0.1.0
 
 ## Hello, World!
-
 ```py
-def write : ext std.io.write;
-def main : () => write("Hello, World!\n");
+def main : () => ext std.io.write("Hello, World!\n");
 ```
 
 ## Philosophy
@@ -849,7 +847,7 @@ You can also name function arguments as '_', this is particularly great for valu
 def some_callback : (a, b = u32, _ = u32, _ = f32) u32 => a + b;
 ```
 
-It's also possible to define `_` as a constant as well. This is useful for getting rid of compile-time functions return values at module scope:
+It's also possible to define `_` as a constant as well. This is useful for getting rid of compile-time functions return values at [module scope](#Module-scope):
 ```py
 def foo : () i32 => return_some_i32();
 
@@ -870,6 +868,30 @@ it works differently than [constant scoping](#Constant-scoping). A variable cann
 
 ### Variable shadowing
 Exactly the same as [constant shadowing](Constant-shadowing).
+
+### Global variables
+variables can be defined on [module scope](#Module-scope). Their default values must be constant and they can't be assigned on module scope, even forward assignment isn't allowed:
+```py
+def x = i32;
+x = 10; # error: assignment on module scope
+def main : () =>;
+```
+
+You can reference variables on module scope for assignment of other variables or constants:
+```py
+def x = i32 10;
+def y = x; # valid
+def FOO : x; # valid
+def main : () =>;
+```
+
+But if the variable is mutable you can't:
+```py
+def x = mut i32 10;
+def y = x; # error: 'x' isn't a constant or an immutable variable
+def FOO : x; # error: 'x' isn't a constant or an immutable variable
+def main : () =>;
+```
 
 ## Primitive types
 There are two types of primitive types, the ones that can be assigned to runtime variables and the ones that dont.
@@ -3300,7 +3322,7 @@ else => ...;
 @for i in 0..9 => ...;
 ```
 
-And all of them can be ran in module-scope.
+And all of them can be ran in [module-scope](#Module-scope).
 
 All compile-time loops are unrolled. And all false `if`/`else`/`switch` conditions aren't included on the final code. They're still checked for errors though.
 
@@ -3939,13 +3961,111 @@ def b = u64 == Num32; # b == false
 ### Builtin classes
 Work in progress...
 
-## Namespaces
-Work in progress...
+## Spaces
+Spaces are a subset of the current [module](#Modules) into one common constant. Everything that's valid on the outside module is valid inside of a space. To define a space simply use curly brackets, everything inside it is part of the space:
+```py
+def some_space : {
+  def sum : (x, y = i32) i32 => x+y;
+  def sub : (x, y = i32) i32 => x-y;
+};
+```
 
-## Concurrency
-Work in progress...
+To access a symbol from a space use the `<space>.<symbol>` syntax:
+```py
+some_space : {
+  def sum : (x, y = i32) i32 => x+y;
+  def sub : (x, y = i32) i32 => x-y;
+};
+def _ = some_space.sum(1, 2);
+```
 
-## Modules, build system and linking
+### Space privacy
+Everything inside of a space is `pub` by default, so the `pub` attribute doesn't really do anything. But you can mark them as `prv` to be only accessable inside the space itself:
+```py
+def some_space : {
+  prv def mul : (x, y = f32) f32 => x+y;
+  pub def dot : (x0,y0, x1,y1 = f32) f32 => x0 mul x1 + y0 mul y1; # 'pub' isn't really needed
+};
+def _ = some_space.dot(1.0, 2.0, 3.0, 4.0);
+def _ = some_space.mul(1.0, 2.0); # error: 'mul' is private
+```
+
+### Space type
+All spaces have the type `spc`, so you can define them explicitly:
+```py
+def some_space : spc {
+  def foo : () =>;
+  def bar : () =>;
+};
+```
+
+### The 'use' overload
+There's a bultin overload called `use`, it has two functions by default in it:
+```py
+def use : [a = spc, b = [..]meta.iden, c = meta](a, b+) c||void (
+  (space = spc) meta =>...,
+  (space = spc, symbols = [..]meta.iden) meta =>...,
+);
+```
+
+The function that just takes a space will make binds for all the spaces symbols:
+```py
+def some_space : {
+  def add : (x, y = i32) i32 => x+y;
+  def sub : (x, y = i32) i32 => x-y;
+  def mul : (x, y = i32) i32 => x*y;
+  def div : (x, y = i32) i32 => x/y;
+};
+@use some_space;
+```
+
+`@use some_space` does actually this:
+```py
+def add : some_space.add;
+def sub : some_space.sub;
+def mul : some_space.mul;
+def div : some_space.div;
+```
+
+And the function that takes a space an a slice of identifiers will make a bind only for those specific identifiers:
+```py
+def some_space : {
+  def add : (x, y = i32) i32 => x+y;
+  def sub : (x, y = i32) i32 => x-y;
+  def mul : (x, y = i32) i32 => x*y;
+  def div : (x, y = i32) i32 => x/y;
+};
+@use(some_space, [add, div]);
+```
+
+`@use(some_space, [add, div])` does actually this:
+```py
+def add : some_space.add;
+def div : some_space.div;
+```
+
+If `@use` finds a conflict between the binding is trying to make and an already defined symbol it asserts:
+```py
+def some_space : {
+  def add : (x, y = i32) i32 => x+y;
+  def sub : (x, y = i32) i32 => x-y;
+  def mul : (x, y = i32) i32 => x*y;
+  def div : (x, y = i32) i32 => x/y;
+};
+def add : some_space.add;
+@use some_space; # error: 'add' is already defined
+```
+
+## Modules
+Work in progress...
+### Dividing a module into multiple files
+Work in progress...
+### Build system and linking
+Work in progress...
+### Importing
+```py
+ext std.base.import "std.base" use all;
+```
 Work in progress...
 
 ## FFI
