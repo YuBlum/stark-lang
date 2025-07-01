@@ -614,10 +614,10 @@ def ptr_to_square_f32 = &square(f32); # different pointer from 'ptr_to_square_i3
 
 The type of a function pointer looks like this:
 ```py
-*fn(type0, type1, ...) return_type # function pointer
+*fn(name0 = type0, name1 = type1, ...) return_type # function pointer
 ```
 
-Obviously is not possible to take the mutable address of a function, so mutable function pointer aren't a thing.
+Obviously is not possible to take the mutable address of a function, so mutable function pointers aren't a thing.
 
 ### Passing functions as arguments
 There are basically three ways of passing functions as arguments:
@@ -820,19 +820,14 @@ def y = (++x); # increment x then assign x to y
 ```
 
 ### Variable aliasing
-You can create an alias to a variable using a constant with type `var`:
+You can create an alias to a variable. Simply start to define a new variable an it's value has to be `var` followed by a valid variable:
 ```py
 def x = mut i32;
-def y : var x;
+def y = var x;
 def _ = &y == &x; # true, both are variables of the same type with the same address
 ```
 
-The mutability will remain the same on the `alias`. It's literally the same variable just being referenced by a different identifier:
-```py
-def x = mut i32;
-def y : var x;
-y = 10; # x == 10
-```
+`y` will not be a pointer to `x`. `x` and `y` literally become the same thing.
 
 ### Unused variables and the '_' identifier
 It's exactly the same situation as [unused constants](#Unused-constants) or [unused arguments](#Unused-arguments):
@@ -4329,6 +4324,53 @@ def sqrt : fn(x = f64) f64 unk "libm" "sqrt";
 The linker will automaticaly link to every library specified by every `unk`.
 
 The linking path will be specified by the linker. But you can also create a directory named `unk`, that path will be automatically added by the linker. 
+
+## Machine code capabilities in Stark
+It's possible to embed binary data directly into stark code using the `embed` expression. This expression takes flags for the embeded data permission and a constant slice of `u8`s. It'll return a `*void` or a `*mut void` depending on the flags: 
+`def data : embed rw [0x86, 0xff]`;
+
+### Embed flags
+This are the possible flags that `embed` accepts:
+- `r`: Readable data
+- `w`: Writable data
+- `x`: Executable data
+- `rw`: Readable writable data
+- `rx`: Readable executable data
+- `wx`: Writable executable data
+- `rwx`: Readable writable executable data
+
+If you don't have the appropriate flag for what you're trying to do with that data (read/write/execute/) a segmentation fault will occur.
+
+### Executing embedded data
+To execute data created using `embed` first you need to cast it to a [function pointer](#Function-pointers), then simply run the function:
+```py
+def add : embed x [0x48, 0x8D, 0x04, 0x37, 0xC3] -> *fn(a = u64, b = u64) u64;
+def x = add(3, 4); # x == 7
+```
+
+### The bultin 'asm' function
+There's a function on the `std.base` module called `asm`, this function takes intel assembly source code and returns a pointer to the assembly data. It internaly uses `embed` with the flag `x`. The valid assembly source will depend on the current platform (x86, x64, etc):
+```py
+def add : @asm $end
+  lea rax, [rdi+rsi]
+  ret
+end -> *fn(a = u64, b = u64) u64;
+def x = add(3, 4); # x == 7
+```
+
+### Manipulating registers
+You can activaly read from and write to registers for your target platform using the `reg` keyword:
+```py
+reg rax = 10;
+def x = u64 reg rax; # x == 10
+```
+
+The infered type of the variable will be based on the register: `rax` = `u64`, `eax` = u32, etc:
+```py
+def x = reg ax; # x is of type u8
+```
+
+This can pair up way of `embed` and `asm`.
 
 ## Standard bundle
 ### Base module

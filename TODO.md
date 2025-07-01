@@ -22,6 +22,7 @@ Notes about the subset:
 - Function type inference is allowed because functions don't have types in the subset
 - Functions don't have an error return type
 - Only types supported: `u64`, `cstr` and custom structs
+- Only standard string literals, no raw stuff
 - No immutability for variables
 - No struct constructor
 - No constant members for structs
