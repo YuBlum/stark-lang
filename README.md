@@ -932,6 +932,9 @@ None of the compile-time-only primitives have a size
 - __Variable type:__ `type`
 - __Ranges:__ `range`
 - __Classes:__ `class`
+- __Spaces__: `spc`
+- __Foreign functions__: `unkfn`
+- __Variables aliases__: `var`
 
 This types are valid to use in constants and [ensured-compile-time functions](#Compile-time-functions).
 
@@ -959,6 +962,79 @@ Where `length` is the amount of characters on the string and `bytes_count` is th
 Strings don't actually hold any data. They're equivalent to string views in other languages.
 
 C strings are similar, but they don't have a `bytes_length` field, they're ASCII encoded and null-terminated.
+
+#### Raw string literals
+Theres a way to transform a series of tokens into string literals directly: use `$` followed by an identifier, then you need to write the same identifier again. Everything in between the identifiers will become part of the string, the first and last white spaces do not count:
+```py
+def _  = $end hello, world! end;
+```
+
+The above raw string literal is equivalent to:
+```py
+def _ = "hello, world!";
+```
+
+Because the string only ends when the specified identifier is reached you don't need any escaping:
+```py
+def _ = $end
+My name is: "John Doe"
+I'm '20' years old
+end
+```
+
+The above raw string literal is equivalent to:
+```py
+def _  = "My name is: \"John Doe\"\nI'm '20' years old"
+```
+
+You can add constant binds to the raw string. In between the `$` and the identifier add parenthesis, inside the parenthesis you can create constants that works on the string. To reference the constant binding put the specified identifier in between `$`:
+```py
+def _ = $(NAME : "John Doe", AGE : 20) end
+His name is $NAME$. $NAME$ is $AGE$ years old.
+$AGE$ is a good age. "$NAME$" is a good name.
+end
+```
+
+The above raw string literal is equivalent to:
+```py
+def _ = "his name is John Doe. John Doe is 20 years old.\n20 is a good age. \"John Doe\" is a good name";
+```
+
+You can bind any constant into the raw string constants:
+```py
+def TEN : 10;
+def _ = $(X : TEN) end $X$ $X$ $X$ end; # equivalent to "10 10 10"
+```
+
+If you want the constant bind and the constant itself to share the same name you can do this as a shortcut:
+```py
+def TEN : 10;
+def _ = $(TEN, ELEVEN : 11) end $TEN$ $TEN$ $TEN$ $ELEVEN$ end; # equivalent to "10 10 10 11"
+```
+
+You can also bind every constant defined on _the current scope_ using `(*)`:
+```py
+def TEN : 11;
+def FOO : "foo";
+def _ = $(*) end $TEN$_$FOO$ end; # equivalent to "10_foo"
+```
+
+Remember `(*)` only works for definitions on the current scope:
+```py
+def TEN : 10;
+{
+  def FOO : "foo"; 
+  def _ = $(*) end $TEN$_$FOO$ end; # equivalent to "$TEN$_foo"
+}
+```
+
+Use `(*)` only in tight packed scopes because the risk of an override of an actual word and a predefined constant is high:
+```py
+def hello : "world";
+def _ = $(*) end $hello$, $world$! end; # equivalent to "world, $world$!"
+```
+
+This can be a little dumb with this example, but it can be dangerous if you actually want a thing warpped around `$`s to be part of the string.
 
 ### Booleans
 Booleans are really simple, they just can have two states: `true` or `false`
@@ -1033,12 +1109,14 @@ def ending_index = RANGE.end;
 | 123.0f64         | f64 literal      | f64                                 | f64                                                               |
 | true/false       | Boolean literal  | bool                                | bool                                                              |
 | null             | Null constant    | option                              | option                                                            |
+| 'a'              | uchar literal    | uchar                               | uchar                                                             |
+| c'a'             | achar literal    | achar                               | achar                                                             |
 | "text"           | String literal   | str                                 | str                                                               |
 | c"text"          | C string literal | cstr                                | cstr                                                              |
 | i32, f32, Struct | Types directly   | type                                | The typed 'type' (i32, f32, etc) with a default value             |
 | \[1, 2, 3\]      | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
 | \[3\]21          | Array literal    | \[amount-of-elements\]inferred      | \[amount-of-elements\]inferred                                    |
-| $code END END    | Code literal     | meta                                | meta (Compile-time only)                                          |
+| $END END         | Raw string lit   | str                                 | str                                                               |
 | 1..9             | Range literal    | range                               | range (Compile-time only)                                         |
 | 1..<9            | Range literal    | range                               | range (Compile-time only)                                         |
 
@@ -1860,6 +1938,7 @@ def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
 def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # valid
 ```
 
+#### Compile-time only structs
 If a struct has only constant members it becomes a compile-time only type:
 ```py
 def Vec2 : (T : imp type is number, a, b : T);
@@ -2736,6 +2815,7 @@ def res = Result div(4, 2)!; # valid
 
 ### Invalid casting
 Casting is not valid for [arrays](#Arrays), [slices](#Slices), [anyrt](#The-anyrt-type) and custom types (except for distinct aliases or union tags).
+
 ## The meta type
 A `meta` is a builtin [union](#Unions) type that represents a node from the Stark AST.
 
@@ -2744,9 +2824,9 @@ It is a [compile-time-only type](#Compile-time-only-primitive-types) and it foll
 To see an in-depth list of all tags held by a `meta` see: [Meta types](#Types-of-metas).
 
 ### Meta literals
-To create a `meta` literal use the `$code` keyword followed by an identifier. When the specified identifier is reached the meta literal ends:
+To create a `meta` from code use the builtin `code` function, this function accepts strings, but they really shine if [raw string literals](#Raw-string-literals) are use:
 ```py
-some_code : $code code_end
+some_code : @code $code_end
   def add : (T : imp type is number, a, b = T) T => a+b;
   def sub : (T : imp type is number, a, b = T) T => a-b;
   def mul : (T : imp type is number, a, b = T) T => a*b;
@@ -2754,10 +2834,10 @@ some_code : $code code_end
 code_end;
 ```
 
-That way nested meta literals are possible:
+Because of the way raw string literals works, they can be nested:
 ```py
-some_code : $code code_end
-  some_code_inside_some_code : $code code2_end
+some_code : @code $code_end
+  some_code_inside_some_code : @code $code2_end
     def square_from_the_code_inside_the_code : (T : imp type is number, x = T) T => x*x;
   code2_end
 code_end;
@@ -2767,16 +2847,16 @@ The tag of the generated `meta` is `meta.root`.
 
 To put all this meta-code inside your actual source code is very simple, use the `@` operator:
 ```py
-some_code : $code code_end def TEN : 10; code_end;
+some_code : @code $code_end def TEN : 10; code_end;
 @some_code; # now 'TEN' is defined
 ```
 
 What that did was put whatever was in the `some_code` AST into the main code AST at that spot.
 
-It's possible to access values from compile-time known variables or constants inside the code literal using `$` as a prefix:
+The raw literals constant bindings gives you macro behaviour:
 ```py
 def TEN : 10;
-define_ten2 : $code code_end def TEN2 : $TEN; code_end;
+define_ten2 : @code $(TEN) code_end def TEN2 : $TEN$; code_end;
 @define_ten2; # TEN2 is now defined with the value 10 on it
 ```
 
@@ -2801,23 +2881,23 @@ def something : () i32 => @an_actual_expression; # 'something' returns 3 + 4
 ### Metaprogramming with metas
 You can return metas from ensured-compile-time functions:
 ```py
-def return_code : @() meta => $code end
+def return_code : @() meta => @code $end
   def square(T : type is number, a = T) T => a*a;
 end;
 ```
 
 Using the `@` operator on a function that returns a `meta` will not only call the function, but also inject the `meta` AST into the main AST:
 ```py
-def gen_square_fn : @() meta => $code end
+def gen_square_fn : @() meta => @code $end
   def square(T : type is number, a = T) T => a*a;
 end;
 @gen_square_fn(); # now the square function is defined
 ```
 
-The `meta.iden` and `meta.expr` also can be passed as constant arguments, this is useful for putting their values directly on code literals:
+The `meta.iden` and `meta.expr` also can be passed as constant arguments, this is useful for putting their values directly on the code function:
 ```py
-def gen_fn_with_arg_a : @(fn_name : meta.iden, fn_expr : meta.expr) meta => $code end
-  def $fn_name(T : type is number, a = T) T => $fn_expr;
+def gen_fn_with_arg_a : @(fn_name : meta.iden, fn_expr : meta.expr) meta => @code $(*)end
+  def $fn_name$(T : type is number, a = T) T => $fn_expr$;
 end;
 @gen_fn_with_arg_a(square, a * a);
 ```
@@ -3974,7 +4054,21 @@ def b = u64 == Num32; # b == false
 ```
 
 ### Builtin classes
-Work in progress...
+There are several builtin classes:
+- `signed`: `i8+i16+i32+i64+isize`
+- `unsigned`: `u8+u16+u32+u64+usize`
+- `integer`: `signed+unsigned`
+- `float`: `f32+f64`
+- `number`: `integer+float`
+- `string`: `str+cstr`
+- `componly`: `class+type+spc+anyi+anyf+range+var+unkfn`, [function types](#Functions-are-just-values) and [compile-time struct](#Compile-time-only-structs) are also part of it
+- `runonly`: `any-componly`
+- `customtype`: All custom types (structs, unions, etc)
+- `struct`: All structs
+- `union`: All unions
+- `any`: All types
+
+Some of them are updated when custom types are added. Like `struct`, `union`, `any`, etc.
 
 ## Spaces
 Spaces are a subset of the current [module](#Modules) into one common constant. Everything that's valid on the outside module is valid inside of a space. To define a space simply use curly brackets, everything inside it is part of the space:
@@ -4219,11 +4313,22 @@ The reason why `.sks` is used for the extension of those separate space files is
 
 The search path for those `.sks` files is the directory in which the module that they are being included to is located.
 
-## FFI
-Work in progress...
+## Foreign function interface
+You can get a symbol from a foreign dynamic or static library using the `unk` keyword, followed by a string with the name of said library and another string representing the name of said symbol:
+```py
+unk "libm" "sqrt"
+```
 
-## EBNF
-Work in progress...
+The extension `.so`, `.dll`, etc; must not be included with the library name.
+
+This will return a value with the type `unkfn`, that value can be assigned to a constant function of any type:
+```py
+def sqrt : fn(x = f64) f64 unk "libm" "sqrt";
+```
+
+The linker will automaticaly link to every library specified by every `unk`.
+
+The linking path will be specified by the linker. But you can also create a directory named `unk`, that path will be automatically added by the linker. 
 
 ## Standard bundle
 ### Base module
