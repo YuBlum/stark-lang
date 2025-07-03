@@ -89,7 +89,7 @@ For functions with no return value use [void](#The-void-type) as the return type
 def foo : () void =>;
 ```
 
-`void` is infered if no return type is provided:
+`void` is inferred if no return type is provided:
 ```py
 def foo : () =>;
 ```
@@ -3514,7 +3514,7 @@ this() or that() or(e) println("error: %", [e]);
 ```
 
 ### Options
-An option is just a type that can have the value `null` instead of a valid value. Internaly the type just gains a flag value telling if it's null or not. To create an option add `?` as a prefix to the type:
+An option is just a type that can have the value `null` instead of a valid value. Internally the type just gains a flag value telling if it's null or not. To create an option add `?` as a prefix to the type:
 ```py
 def x = ?i32 null;
 ```
@@ -4326,7 +4326,7 @@ The linker will automaticaly link to every library specified by every `unk`.
 The linking path will be specified by the linker. But you can also create a directory named `unk`, that path will be automatically added by the linker. 
 
 ## Machine code capabilities in Stark
-It's possible to embed binary data directly into stark code using the `embed` expression. This expression takes flags for the embeded data permission and a constant slice of `u8`s. It'll return a `*void` or a `*mut void` depending on the flags: 
+It's possible to embed binary data directly into stark code using the `embed` expression. This expression takes flags for the embedded data permission and a constant slice of `u8`s. It'll return a `*void` or a `*mut void` depending on the flags: 
 `def data : embed rw [0x86, 0xff]`;
 
 ### Embed flags
@@ -4349,7 +4349,7 @@ def x = add(3, 4); # x == 7
 ```
 
 ### The bultin 'asm' function
-There's a function on the `std.base` module called `asm`, this function takes intel assembly source code and returns a pointer to the assembly data. It internaly uses `embed` with the flag `x`. The valid assembly source will depend on the current platform (x86, x64, etc):
+There's a function on the `std.base` module called `asm`, this function takes intel assembly source code and returns a pointer to the assembly data. It internally uses `embed` with the flag `x`. The valid assembly source will depend on the current platform (x86, x64, etc):
 ```py
 def add : @asm $end
   lea rax, [rdi+rsi]
@@ -4365,12 +4365,12 @@ reg rax = 10;
 def x = u64 reg rax; # x == 10
 ```
 
-The infered type of the variable will be based on the register: `rax` = `u64`, `eax` = u32, etc:
+The inferred type of the variable will be based on the register: `rax` = `u64`, `eax` = u32, etc:
 ```py
-def x = reg ax; # x is of type u8
+def x = reg al; # x is of type u8
 ```
 
-This can pair up way of `embed` and `asm`.
+This can pair up well with `embed` and `asm`.
 
 ## Standard bundle
 ### Base module

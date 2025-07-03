@@ -33,14 +33,15 @@ Notes about the subset:
 - If expressions are allowed
 - All pointers are mutable and 
 - Only supported operators are the four basic operations (`+`, `-`, `*`, `/`), bitwise ones (`<<`, `>>`, `|`, `&`), boolean logic (`!`, `==`, `>=`, `<=`, `>`, `<`, `&&`, `||`) and assignment (`=`)
-- Supports an intrinsic called `__syscall__`, this intrinsic takes 7 arguments, the first one is the syscall number and the rest is the syscall arguments. This intrinsic will be removed in the future.
+- Supports an intrinsic called `__syscall__`, this intrinsic takes 7 arguments, the first one is the syscall number and the rest is the syscall arguments. This intrinsic will be depecrated and substituted by `embed` in the future.
+- No `ext` or `unk`, only can build one file into one fasm file
 - Any features not explicitly stated here is simply not allowed
 
 Stark compiler on C rules:
 - No libc
 - No external libraries
 - Only structs, strings and `uint64_t` is allowed as types
-- No preprocessor
+- Only use `#define` for constant like behaviour
 - C89
 
 This subset is called _Starc_ because it's Stark written in C.
