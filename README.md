@@ -3064,7 +3064,7 @@ A comparable type is a type that allowes the usage of the `==`, `!=`, `>=` and `
 - Arrays can be compared if their length and type is the same
 - Slices can be compared if their type is the same
 - Struct instances can be compared if all their members are comparable types, and their struct type is the same
-- Unions are comparable with it's tags
+- Unions are comparable with their tags
 
 ## Control flow (if, else, switch and loops)
 ### If and else
@@ -3133,7 +3133,7 @@ if   def (x = get_this()) == 10 => ...;
 else def (x = get_that()) == 9  => ...; # error: 'x' is already defined
 ```
 
-Do an assignment without `def` for this is needed:
+Do an assignment without `def` if this is needed:
 ```py
 if def (x = get_this()) == 10 => ...;
 else   (x = get_that()) == 9  => ...; # valid
@@ -3268,7 +3268,7 @@ Because `nxt` is an expression it can be nested:
 ```py
 while def (i = 0) < 10 => {
   defer i++;
-  if i % 2 == 0 => nxt nxt; # skips two iterations
+  if i % 2 == 0 => nxt nxt; # skips next iteration
   do_something();
 }
 ```
@@ -4330,16 +4330,17 @@ It's possible to embed binary data directly into stark code using the `embed` ex
 `def data : embed rw [0x86, 0xff]`;
 
 ### Embed flags
-This are the possible flags that `embed` accepts:
-- `r`: Readable data
-- `w`: Writable data
-- `x`: Executable data
-- `rw`: Readable writable data
-- `rx`: Readable executable data
-- `wx`: Writable executable data
-- `rwx`: Readable writable executable data
+These are the possible flags that `embed` accepts:
+- `r`: Readable-only data
+- `w`: Writable-only data
+- `x`: Executable-only data. On systems that don't permit only executable data (e.g. x86) the behavior is exactly the same as `rx`
+- `rw`: Readable + writable data
+- `rx`: Readable + executable data
+- `wx`: Writable + executable data. On systems that don't permit only executable data (e.g. x86) the behavior is exactly the same as `rwx`
+- `rxx`: Readable + executable data. If used in a function the machine code will be inlined. If it isn't behaves the same as `rx`.
+- `rwx`: Readable + writable + executable data
 
-If you don't have the appropriate flag for what you're trying to do with that data (read/write/execute/) a segmentation fault will occur.
+If you don't have the appropriate flag for what you're trying to do with that data (read/write/execute) a segmentation fault will occur.
 
 ### Executing embedded data
 To execute data created using `embed` first you need to cast it to a [function pointer](#Function-pointers), then simply run the function:
@@ -4365,7 +4366,7 @@ reg rax = 10;
 def x = u64 reg rax; # x == 10
 ```
 
-The inferred type of the variable will be based on the register: `rax` = `u64`, `eax` = u32, etc:
+The inferred type of the variable will be based on the register: `rax` = `u64`, `eax` = `u32`, etc:
 ```py
 def x = reg al; # x is of type u8
 ```
@@ -4377,7 +4378,7 @@ This can pair up well with `embed` and `asm`.
 Work in progress...
 
 ### Mem module
-NOTE: arena allocator and Arena_Array
+NOTE: arena allocator and `Tape` (non-reallocatable dynamic array with an arena, static memory or stack as it's backend)
 Work in progress...
 
 ### I/O module
