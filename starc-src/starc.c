@@ -170,6 +170,8 @@ tape_destroy(void *tape) {
   return munmap(h, sizeof (struct tape_header) + h->cap) == 0;
 }
 
+#undef TAPE_HEADER_GET
+
 /* string */
 struct string {
   const char *buf;
@@ -343,8 +345,13 @@ string_builder_println(struct string_builder *builder) {
   return !is_neg(write(builder->fd, builder->buf + builder->beg, builder->len));
 }
 
-
+/* default I/O buffer */
 static struct string_builder io;
+void
+io_make(void) {
+  io = string_builder_begin(0);
+  if (!io.buf) exit(1);
+}
 
 void
 assert(u64 cond, const char *msg) {
@@ -358,30 +365,230 @@ assert(u64 cond, const char *msg) {
   exit(1);
 }
 
+/* source file */
+struct source {
+  struct string data;
+  u64 pos;
+};
+
+struct source
+file_to_source(const char *file_path) {
+  struct source src;
+  char *src_buf;
+  u64 src_file;
+  struct stat src_stat;
+  src_file = open(file_path, O_RDONLY, 0);
+  assert(!is_neg(src_file), "couldn't open source file");
+  assert(!is_neg(fstat(src_file, &src_stat)), "couldn't get file info");
+  src_buf = tape_make(sizeof (char), src_stat.st_size);
+  assert(src_buf != 0, "couldn't make source buffer");
+  assert(read(src_file, src_buf, src_stat.st_size) == src_stat.st_size, "couldn't read source file");
+  assert(!is_neg(close(src_file)), "couldn't close source file");
+  src.data.len = src_stat.st_size;
+  src.data.buf = src_buf;
+  return src;
+}
+
+char
+source_begin(struct source *src) {
+  if (!src || !src->data.buf) return '\0';
+  src->pos = 0;
+  return src->data.buf[0];
+}
+
+char
+source_next(struct source *src) {
+  if (!src || !src->data.buf) return '\0';
+  if (src->pos + 1 >= src->data.len) return '\0';
+  return src->data.buf[++src->pos];
+}
+
+char
+source_peek(const struct source *src, u64 offset) {
+  if (!src || !src->data.buf) return '\0';
+  if (src->pos + 1 + offset >= src->data.len) return '\0';
+  return src->data.buf[src->pos + 1 + offset];
+}
+
+/* lexer */
+enum token_type {
+  TKN_IDEN = 0,
+  TKN_INT,
+  TKN_DEF,
+  TKN_LPAR,
+  TKN_RPAR,
+  TKN_ASSIGN_BOD,
+  TKN_ASSIGN_CON,
+  TKN_ASSIGN_VAR,
+  TKN_SEMICOLON,
+  TKN_COMMA
+};
+
+struct string
+token_to_string(enum token_type type) {
+  struct string res;
+  res.buf = "Unknown";
+  res.len = 7;
+  switch (type) {
+    case TKN_IDEN:        res.buf = "Identifier";        res.len = 10;  break;
+    case TKN_INT:         res.buf = "Integer";           res.len = 3;   break;
+    case TKN_DEF:         res.buf = "Def";               res.len = 3;   break;
+    case TKN_LPAR:        res.buf = "Left_Parenthesis";  res.len = 16;  break;
+    case TKN_RPAR:        res.buf = "Right_Parenthesis"; res.len = 17;  break;
+    case TKN_ASSIGN_BOD:  res.buf = "Assign_Body";       res.len = 11;  break;
+    case TKN_ASSIGN_CON:  res.buf = "Assign_Constant";   res.len = 15;  break;
+    case TKN_ASSIGN_VAR:  res.buf = "Assign_Variable";   res.len = 15;  break;
+    case TKN_SEMICOLON:   res.buf = "Semicolon";         res.len = 9;   break;
+    case TKN_COMMA:       res.buf = "Comma";             res.len = 5;   break;
+  }
+  return res;
+}
+
+struct token {
+  enum token_type type;
+  struct string data;
+};
+
+enum lexer_state {
+  LEXER_NORMAL = 0,
+  LEXER_IDEN,
+  LEXER_INT,
+  LEXER_COMMENT
+};
+
+static u64
+is_delimiter(char c) {
+  return c == ' ' || c == '\t' || c == '\n';
+}
+
+static u64
+is_identifier_start(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'z') || c == '_';
+}
+
+static u64
+is_number(char c) {
+  return c >= '0' && c <= '9';
+}
+
+#define NEW_TOKEN(tok_type) do { \
+  tok = tape_push(tokens, struct token); \
+  assert(tok != 0, "exceeded maximum token capacity"); \
+  tok->type = tok_type; \
+  tok->data = tok_data; \
+} while (0)
+
+struct token *
+source_to_tokens(struct source *src) {
+  char c;
+  enum lexer_state state;
+  struct string tok_data;
+  struct token *tok;
+  struct token *tokens;
+  tokens = tape_make(sizeof (struct token), 0);
+  assert(tokens != 0, "couldn't make tokens buffer");
+  state = LEXER_NORMAL;
+  for (c = source_begin(src); c; c = source_next(src)) {
+    switch (state) {
+      case LEXER_NORMAL: {
+        if (is_delimiter(c)) continue;
+        tok_data.buf = &src->data.buf[src->pos];
+        tok_data.len = 1;
+        if (is_identifier_start(c)) {
+          state = LEXER_IDEN;
+          continue;
+        }
+        if (is_number(c)) {
+          state = LEXER_INT;
+          continue;
+        }
+        switch (c) {
+          case '#':
+            state = LEXER_COMMENT;
+            continue;
+            break;
+          case '(':
+            NEW_TOKEN(TKN_LPAR);
+            break;
+          case ')':
+            NEW_TOKEN(TKN_RPAR);
+            break;
+          case ',':
+            NEW_TOKEN(TKN_COMMA);
+            break;
+          case ';':
+            NEW_TOKEN(TKN_SEMICOLON);
+            break;
+          case ':':
+            NEW_TOKEN(TKN_ASSIGN_CON);
+            break;
+          case '=': {
+            if (source_peek(src, 0) == '>') {
+              (void)source_next(src);
+              tok->data.len++;
+              NEW_TOKEN(TKN_ASSIGN_BOD);
+            } else {
+              NEW_TOKEN(TKN_ASSIGN_VAR);
+            }
+          } break;
+          default:
+            io.fd = STDERR;
+            if (string_builder_clear(&io)) {
+              if (string_builder_append_cstr(&io, "unknown symbol '") &&
+                  string_builder_append_char(&io, c) &&
+                  string_builder_append_char(&io, '\'')) {
+                (void)string_builder_println(&io);
+              }
+            }
+            exit(1);
+        }
+      } break;
+      case LEXER_IDEN: {
+        if (is_identifier_start(c) || is_number(c)) {
+          tok_data.len++;
+          continue;
+        }
+        NEW_TOKEN(TKN_IDEN);
+        state = LEXER_NORMAL;
+      } break;
+      case LEXER_INT: {
+        if (is_number(c)) {
+          tok_data.len++;
+          continue;
+        }
+        NEW_TOKEN(TKN_INT);
+        state = LEXER_NORMAL;
+      } break;
+      case LEXER_COMMENT: {
+        if (c == '\n') state = LEXER_NORMAL;
+      }
+    }
+  }
+  return tokens;
+}
+#undef NEW_TOKEN
+
 /* entry point */
 void
 _start(void) {
-  struct string src;
+  struct source src;
+  struct token *tokens;
+  u64 i;
 
-  io = string_builder_begin(0);
-  if (!io.buf) exit(1);
+  io_make();
 
-  {
-    char *src_buf;
-    u64 src_file;
-    struct stat src_stat;
-    src_file = open("./first.sk", O_RDONLY, 0);
-    assert(!is_neg(src_file), "couldn't open source file");
-    assert(!is_neg(fstat(src_file, &src_stat)), "couldn't get file info");
-    src_buf = tape_make(sizeof (char), src_stat.st_size);
-    assert(src_buf != 0, "couldn't make source buffer");
-    assert(read(src_file, src_buf, src_stat.st_size) == src_stat.st_size, "couldn't read source file");
-    assert(!is_neg(close(src_file)), "couldn't close source file");
-    src.len = src_stat.st_size;
-    src.buf = src_buf;
+  src = file_to_source("./first.sk");
+  tokens = source_to_tokens(&src);
+
+  for (i = 0; i < tape_len(tokens); i++) {
+    struct string str = token_to_string(tokens[i].type);
+    assert(string_builder_append_cstr(&io, "token = { "), 0);
+    assert(string_builder_append(&io, &str), 0);
+    assert(string_builder_append_cstr(&io, ", '"), 0);
+    assert(string_builder_append(&io, &tokens[i].data), 0);
+    assert(string_builder_append_cstr(&io, "' }\n"), 0);
   }
 
-  assert(string_builder_append(&io, &src), 0);
   assert(string_builder_print(&io), 0);
 
   exit(0);

@@ -1,3 +1,4 @@
+
 def exit : (code = u64) => __syscall__(60, code, 0, 0, 0, 0, 0);
 
 def main : () => exit(42);
