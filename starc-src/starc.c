@@ -101,7 +101,7 @@ void *
 tape_make(u64 type_size, u64 capacity) {
   struct tape_header *h;
   if (type_size == 0) type_size = 1;
-  if (capacity == 0) capacity = 1ul << 33;
+  if (capacity == 0) capacity = 1ul << 32; /* 4GiB of default capacity, practically infinite */
   h = mmap(0, sizeof (struct tape_header) + capacity, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   if (h == MAP_FAILED) return 0;
   h->len = 0;
@@ -386,28 +386,29 @@ file_to_source(const char *file_path) {
   assert(!is_neg(close(src_file)), "couldn't close source file");
   src.data.len = src_stat.st_size;
   src.data.buf = src_buf;
+  src.pos = 0;
   return src;
 }
 
 char
-source_begin(struct source *src) {
+source_chop(struct source *src) {
   if (!src || !src->data.buf) return '\0';
-  src->pos = 0;
-  return src->data.buf[0];
-}
-
-char
-source_next(struct source *src) {
-  if (!src || !src->data.buf) return '\0';
-  if (src->pos + 1 >= src->data.len) return '\0';
-  return src->data.buf[++src->pos];
+  if (src->pos >= src->data.len) return '\0';
+  return src->data.buf[src->pos++];
 }
 
 char
 source_peek(const struct source *src, u64 offset) {
   if (!src || !src->data.buf) return '\0';
-  if (src->pos + 1 + offset >= src->data.len) return '\0';
-  return src->data.buf[src->pos + 1 + offset];
+  if (src->pos + offset >= src->data.len) return '\0';
+  return src->data.buf[src->pos + offset];
+}
+
+void
+source_rewind(struct source *src) {
+  if (!src || !src->data.buf) return;
+  if (src->pos == 0) return;
+  src->pos--;
 }
 
 /* lexer */
@@ -431,7 +432,7 @@ token_to_string(enum token_type type) {
   res.len = 7;
   switch (type) {
     case TKN_IDEN:        res.buf = "Identifier";        res.len = 10;  break;
-    case TKN_INT:         res.buf = "Integer";           res.len = 3;   break;
+    case TKN_INT:         res.buf = "Integer";           res.len = 7;   break;
     case TKN_DEF:         res.buf = "Def";               res.len = 3;   break;
     case TKN_LPAR:        res.buf = "Left_Parenthesis";  res.len = 16;  break;
     case TKN_RPAR:        res.buf = "Right_Parenthesis"; res.len = 17;  break;
@@ -463,7 +464,7 @@ is_delimiter(char c) {
 
 static u64
 is_identifier_start(char c) {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'z') || c == '_';
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
 static u64
@@ -488,11 +489,11 @@ source_to_tokens(struct source *src) {
   tokens = tape_make(sizeof (struct token), 0);
   assert(tokens != 0, "couldn't make tokens buffer");
   state = LEXER_NORMAL;
-  for (c = source_begin(src); c; c = source_next(src)) {
+  while ((c = source_chop(src))) {
     switch (state) {
       case LEXER_NORMAL: {
         if (is_delimiter(c)) continue;
-        tok_data.buf = &src->data.buf[src->pos];
+        tok_data.buf = &src->data.buf[src->pos - 1];
         tok_data.len = 1;
         if (is_identifier_start(c)) {
           state = LEXER_IDEN;
@@ -524,7 +525,7 @@ source_to_tokens(struct source *src) {
             break;
           case '=': {
             if (source_peek(src, 0) == '>') {
-              (void)source_next(src);
+              (void)source_chop(src);
               tok->data.len++;
               NEW_TOKEN(TKN_ASSIGN_BOD);
             } else {
@@ -546,18 +547,20 @@ source_to_tokens(struct source *src) {
       case LEXER_IDEN: {
         if (is_identifier_start(c) || is_number(c)) {
           tok_data.len++;
-          continue;
+          if (source_peek(src, 0) != '\0') continue;
         }
         NEW_TOKEN(TKN_IDEN);
         state = LEXER_NORMAL;
+        source_rewind(src);
       } break;
       case LEXER_INT: {
         if (is_number(c)) {
           tok_data.len++;
-          continue;
+          if (source_peek(src, 0) != '\0') continue;
         }
         NEW_TOKEN(TKN_INT);
         state = LEXER_NORMAL;
+        source_rewind(src);
       } break;
       case LEXER_COMMENT: {
         if (c == '\n') state = LEXER_NORMAL;
@@ -567,6 +570,32 @@ source_to_tokens(struct source *src) {
   return tokens;
 }
 #undef NEW_TOKEN
+
+struct token_position {
+  u64 line, column;
+};
+
+struct token_position
+token_get_position(const struct source *src, const struct token *tok) {
+  struct token_position pos;
+  u64 i;
+  u64 line_idx;
+  u64 tok_start;
+  u64 is_line;
+  pos.line = 1;
+  pos.column = 1;
+  if (!src || !src->data.buf || !tok || !tok->data.buf) return pos;
+  line_idx = 0;
+  tok_start = (u64)(tok->data.buf - src->data.buf);
+  for (i = 0; i < tok_start; i++) {
+    is_line = src->data.buf[i] == '\n';
+    pos.line += is_line;
+    line_idx = (is_line)  * (i + 1) +
+               (!is_line) * line_idx;
+  }
+  pos.column += tok_start - line_idx;
+  return pos;
+}
 
 /* entry point */
 void
@@ -581,12 +610,19 @@ _start(void) {
   tokens = source_to_tokens(&src);
 
   for (i = 0; i < tape_len(tokens); i++) {
+    struct token_position pos = token_get_position(&src, &tokens[i]);
     struct string str = token_to_string(tokens[i].type);
-    assert(string_builder_append_cstr(&io, "token = { "), 0);
+    assert(string_builder_append_cstr(&io, "token["), 0);
+    assert(string_builder_append_u64(&io, i), 0);
+    assert(string_builder_append_cstr(&io, "] = { "), 0);
     assert(string_builder_append(&io, &str), 0);
-    assert(string_builder_append_cstr(&io, ", '"), 0);
+    assert(string_builder_append_cstr(&io, " '"), 0);
     assert(string_builder_append(&io, &tokens[i].data), 0);
-    assert(string_builder_append_cstr(&io, "' }\n"), 0);
+    assert(string_builder_append_cstr(&io, "' "), 0);
+    assert(string_builder_append_u64(&io, pos.line), 0);
+    assert(string_builder_append_cstr(&io, ":"), 0);
+    assert(string_builder_append_u64(&io, pos.column), 0);
+    assert(string_builder_append_cstr(&io, " }\n"), 0);
   }
 
   assert(string_builder_print(&io), 0);

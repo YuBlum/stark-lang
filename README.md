@@ -4308,6 +4308,16 @@ The reason why `.sks` is used for the extension of those separate space files is
 
 The search path for those `.sks` files is the directory in which the module that they are being included to is located.
 
+### Configuring external modules
+To configure settings from the standard bundle you must create a space file with the name `std.sks`. This will be included on the standard bundle modules. In there you can configure it as you like:
+```py
+# std.sks
+TAPE_DEFAULT_CAPACITY : 1 << 20;
+TARGET : "Linux:x86_64";
+```
+
+This is just a convention followed by the standard bundle. But it's good practice to follow it with your own bundles.
+
 ## Foreign function interface
 You can get a symbol from a foreign dynamic or static library using the `unk` keyword, followed by a string with the name of said library and another string representing the name of said symbol:
 ```py
