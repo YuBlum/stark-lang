@@ -5,3 +5,4 @@ def exit : (code = u64) =>
 # main entry point
 def main : () =>
   exit(42);
+

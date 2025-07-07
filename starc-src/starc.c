@@ -197,8 +197,7 @@ string_make(const char *buf, u64 len) {
 
 u64
 string_eq(const struct string *s0, const struct string *s1) {
-  u64 i;
-  u64 diff = 0;
+  u64 i, diff = 0;
   if (!s0 || !s1) return false;
   if (s0->len != s1->len) return false;
   if (s0->len != 0 && (!s0->buf || !s1->buf)) return false;
@@ -210,6 +209,21 @@ u64
 string_print(const struct string *s) {
   if (!s || !s->len || !s->buf) return false;
   return !is_neg(write(STDOUT, s->buf, s->len));
+}
+
+u64
+string_to_u64(const struct string *s) {
+  u64 res, prv, i, invalid;
+  if (!s || !s->buf || !s->len) return 0;
+  res = 0;
+  prv = 0;
+  invalid = 0; 
+  for (i = 0; i < s->len; i++) {
+    prv = res;
+    res = res * 10 + (s->buf[i] - '0');
+    invalid |= s->buf[i] < '0' || s->buf[i] > '9' || res < prv;
+  }
+  return !invalid * res;
 }
 
 /* string builder */
@@ -365,8 +379,64 @@ assert(u64 cond, const char *msg) {
   exit(1);
 }
 
+void
+io_append(const struct string *string) {
+  assert(string_builder_append(&io, string), 0);
+}
+
+void
+io_append_cstr(const char *buf) {
+  assert(string_builder_append_cstr(&io, buf), 0);
+}
+
+void
+io_append_char(char c) {
+  assert(string_builder_append_char(&io, c), 0);
+}
+
+void
+io_append_u64(u64 value) {
+  assert(string_builder_append_u64(&io, value), 0);
+}
+
+void
+io_clear(void) {
+  assert(string_builder_clear(&io), 0);
+}
+
+void
+io_print(void) {
+  assert(string_builder_print(&io), 0);
+}
+
+void
+io_println(void) {
+  assert(string_builder_println(&io), 0);
+}
+
+void io_set_black(void)        { io_append_cstr("\x1b[30m");   }
+void io_set_red(void)          { io_append_cstr("\x1b[31m");   }
+void io_set_green(void)        { io_append_cstr("\x1b[32m");   }
+void io_set_yellow(void)       { io_append_cstr("\x1b[33m");   }
+void io_set_blue(void)         { io_append_cstr("\x1b[34m");   }
+void io_set_magenta(void)      { io_append_cstr("\x1b[35m");   }
+void io_set_cyan(void)         { io_append_cstr("\x1b[36m");   }
+void io_set_white(void)        { io_append_cstr("\x1b[37m");   }
+void io_set_default(void)      { io_append_cstr("\x1b[39m");   }
+void io_set_bold_black(void)   { io_append_cstr("\x1b[1;30m"); }
+void io_set_bold_red(void)     { io_append_cstr("\x1b[1;31m"); }
+void io_set_bold_green(void)   { io_append_cstr("\x1b[1;32m"); }
+void io_set_bold_yellow(void)  { io_append_cstr("\x1b[1;33m"); }
+void io_set_bold_blue(void)    { io_append_cstr("\x1b[1;34m"); }
+void io_set_bold_magenta(void) { io_append_cstr("\x1b[1;35m"); }
+void io_set_bold_cyan(void)    { io_append_cstr("\x1b[1;36m"); }
+void io_set_bold_white(void)   { io_append_cstr("\x1b[1;37m"); }
+void io_set_bold_default(void) { io_append_cstr("\x1b[1;39m"); }
+void io_reset(void)            { io_append_cstr("\x1b[0m");    }
+
 /* source file */
 struct source {
+  struct string file_path;
   struct string data;
   u64 pos;
 };
@@ -386,6 +456,7 @@ file_to_source(const char *file_path) {
   assert(!is_neg(close(src_file)), "couldn't close source file");
   src.data.len = src_stat.st_size;
   src.data.buf = src_buf;
+  src.file_path = string_make(file_path, 0);
   src.pos = 0;
   return src;
 }
@@ -411,6 +482,96 @@ source_rewind(struct source *src) {
   src->pos--;
 }
 
+struct source_line { u64 index, number; }
+source_get_line(const struct source *src, u64 index) {
+  struct source_line line;
+  u64 i;
+  u64 is_line;
+  line.index = 0;
+  line.number = 1;
+  if (!src || !src->data.buf || index >= src->data.len) return line;
+  for (i = 0; i < index; i++) {
+    is_line = src->data.buf[i] == '\n';
+    line.number += is_line;
+    line.index   = (is_line)  * (i + 1)   +
+                   (!is_line) * line.index;
+  }
+  return line;
+}
+
+struct source_position { u64 line, column; }
+source_get_position(const struct source *src, u64 index) {
+  struct source_position pos;
+  struct source_line line;
+  pos.column = 1;
+  if (!src || !src->data.buf || index >= src->data.len) {
+    pos.line = 1;
+    return pos;
+  }
+  line = source_get_line(src, index);
+  pos.column += index - line.index;
+  pos.line    = line.number;
+  return pos;
+}
+
+u64
+source_error_location_to_io(struct source *src, struct source_position *pos) {
+  if (!src || !src->file_path.buf || !pos) return false;
+  io_set_bold_white();
+  io_append(&src->file_path);
+  io_append_char(':');
+  io_append_u64(pos->line);
+  io_append_char(':');
+  io_append_u64(pos->column);
+  io_append_char(':');
+  io_set_bold_red();
+  io_append_cstr(" error: ");
+  io_reset();
+  return true;
+}
+
+u64
+source_invalid_to_io(struct source *src, u64 index, u64 len) {
+  struct source_line line; 
+  struct string line_str;
+  u64 idx_on_line;
+  u64 i, line_number_digits;
+  if (!src || !src->data.buf || index + len > src->data.len) return false;
+  line = source_get_line(src, index);
+  idx_on_line = index - line.index;
+  io_append_cstr("  ");
+  io_append_u64(line.number);
+  io_append_cstr(" | ");
+  line_str.buf = &src->data.buf[line.index];
+  line_str.len = idx_on_line;
+  io_append(&line_str);
+  io_set_bold_red();
+  line_str.buf = &src->data.buf[index];
+  line_str.len = len;
+  io_append(&line_str);
+  io_reset();
+  line_str.buf = &src->data.buf[index + len];
+  line_str.len = 0;
+  for (i = index + len; i < src->data.len; i++) {
+    if (src->data.buf[i] == '\n') break;
+    line_str.len++;
+  }
+  io_append(&line_str);
+  io_append_cstr("\n  ");
+  for (line_number_digits = line.number == 0; line.number; line.number /= 10) line_number_digits++;
+  for (i = 0; i < line_number_digits; i++) io_append_char(' ');
+  io_append_cstr(" | ");
+  for (i = 0; i < idx_on_line; i++) io_append_char(' ');
+  io_set_bold_red();
+  io_append_char('^');
+  if (len) {
+    for (i = 0; i < len - 1; i++) io_append_char('~');
+  }
+  io_reset();
+  io_append_char('\n');
+  return true;
+}
+
 /* lexer */
 enum token_type {
   TKN_IDEN = 0,
@@ -422,28 +583,32 @@ enum token_type {
   TKN_ASSIGN_CON,
   TKN_ASSIGN_VAR,
   TKN_SEMICOLON,
-  TKN_COMMA
+  TKN_COMMA,
+  TKN_SYSCALL
 };
 
+#define TOKEN_STRING(str) do { res.buf = str; res.len = sizeof(str) - 1; } while (0)
 struct string
 token_to_string(enum token_type type) {
   struct string res;
   res.buf = "Unknown";
   res.len = 7;
   switch (type) {
-    case TKN_IDEN:        res.buf = "Identifier";        res.len = 10;  break;
-    case TKN_INT:         res.buf = "Integer";           res.len = 7;   break;
-    case TKN_DEF:         res.buf = "Def";               res.len = 3;   break;
-    case TKN_LPAR:        res.buf = "Left_Parenthesis";  res.len = 16;  break;
-    case TKN_RPAR:        res.buf = "Right_Parenthesis"; res.len = 17;  break;
-    case TKN_ASSIGN_BOD:  res.buf = "Assign_Body";       res.len = 11;  break;
-    case TKN_ASSIGN_CON:  res.buf = "Assign_Constant";   res.len = 15;  break;
-    case TKN_ASSIGN_VAR:  res.buf = "Assign_Variable";   res.len = 15;  break;
-    case TKN_SEMICOLON:   res.buf = "Semicolon";         res.len = 9;   break;
-    case TKN_COMMA:       res.buf = "Comma";             res.len = 5;   break;
+    case TKN_IDEN:        TOKEN_STRING("Identifier");         break;
+    case TKN_INT:         TOKEN_STRING("Integer");            break;
+    case TKN_DEF:         TOKEN_STRING("Def");                break;
+    case TKN_LPAR:        TOKEN_STRING("Left_Parenthesis");   break;
+    case TKN_RPAR:        TOKEN_STRING("Right_Parenthesis");  break;
+    case TKN_ASSIGN_BOD:  TOKEN_STRING("Assign_Body");        break;
+    case TKN_ASSIGN_CON:  TOKEN_STRING("Assign_Constant");    break;
+    case TKN_ASSIGN_VAR:  TOKEN_STRING("Assign_Variable");    break;
+    case TKN_SEMICOLON:   TOKEN_STRING("Semicolon");          break;
+    case TKN_COMMA:       TOKEN_STRING("Comma");              break;
+    case TKN_SYSCALL:     TOKEN_STRING("Syscall");            break;
   }
   return res;
 }
+#undef TOKEN_STRING
 
 struct token {
   enum token_type type;
@@ -471,6 +636,19 @@ static u64
 is_number(char c) {
   return c >= '0' && c <= '9';
 }
+
+#define RETURN_KEYWORD(keyword_string, keyword_type) do { \
+  keyword = string_make(keyword_string, 0); \
+  if (string_eq(tok_data, &keyword)) return keyword_type; \
+} while (0)
+static enum token_type
+token_type_from_identifier(const struct string *tok_data) {
+  struct string keyword;
+  RETURN_KEYWORD("def", TKN_DEF);
+  RETURN_KEYWORD("__syscall__", TKN_SYSCALL);
+  return TKN_IDEN;
+}
+#undef RETURN_KEYWORD
 
 #define NEW_TOKEN(tok_type) do { \
   tok = tape_push(tokens, struct token); \
@@ -532,16 +710,21 @@ source_to_tokens(struct source *src) {
               NEW_TOKEN(TKN_ASSIGN_VAR);
             }
           } break;
-          default:
+          default: {
+            u64 symbol_index = src->pos ? src->pos - 1 : 0;
+            struct source_position pos = source_get_position(src, symbol_index);
             io.fd = STDERR;
-            if (string_builder_clear(&io)) {
-              if (string_builder_append_cstr(&io, "unknown symbol '") &&
-                  string_builder_append_char(&io, c) &&
-                  string_builder_append_char(&io, '\'')) {
-                (void)string_builder_println(&io);
-              }
-            }
+            io_clear();
+            (void)source_error_location_to_io(src, &pos);
+            io_append_cstr("unknown symbol '");
+            io_set_bold_white();
+            io_append_char(c);
+            io_reset();
+            io_append_cstr("'\n");
+            (void)source_invalid_to_io(src, symbol_index, 1);
+            io_print();
             exit(1);
+          } break;
         }
       } break;
       case LEXER_IDEN: {
@@ -549,7 +732,7 @@ source_to_tokens(struct source *src) {
           tok_data.len++;
           if (source_peek(src, 0) != '\0') continue;
         }
-        NEW_TOKEN(TKN_IDEN);
+        NEW_TOKEN(token_type_from_identifier(&tok_data));
         state = LEXER_NORMAL;
         source_rewind(src);
       } break;
@@ -571,30 +754,52 @@ source_to_tokens(struct source *src) {
 }
 #undef NEW_TOKEN
 
-struct token_position {
-  u64 line, column;
+struct source_position
+token_get_position(const struct source *src, const struct token *tok) {
+  if (!src || !src->data.buf || !tok || !tok->data.buf || tok->data.buf < src->data.buf || tok->data.buf >= src->data.buf + src->data.len) {
+    struct source_position pos;
+    pos.line = 1;
+    pos.column = 1;
+    return pos;
+  }
+  return source_get_position(src, (u64)(tok->data.buf - src->data.buf));
+}
+
+u64
+token_invalid_to_io(struct source *src, const struct token *tok) {
+  if (!src || !src->data.buf || !tok || !tok->data.buf || tok->data.buf < src->data.buf || tok->data.buf >= src->data.buf + src->data.len) {
+    return false;
+  }
+  return source_invalid_to_io(src, (u64)(tok->data.buf - src->data.buf), tok->data.len);
+}
+
+/* parser */
+enum ast_type {
+  AST_EXPR = 0,
+  AST_IDEN,
+  AST_INT,
+  AST_DEF_CON,
+  AST_DEF_VAR,
+  AST_FN,
+  AST_ARG,
+  AST_FN_CALL
 };
 
-struct token_position
-token_get_position(const struct source *src, const struct token *tok) {
-  struct token_position pos;
-  u64 i;
-  u64 line_idx;
-  u64 tok_start;
-  u64 is_line;
-  pos.line = 1;
-  pos.column = 1;
-  if (!src || !src->data.buf || !tok || !tok->data.buf) return pos;
-  line_idx = 0;
-  tok_start = (u64)(tok->data.buf - src->data.buf);
-  for (i = 0; i < tok_start; i++) {
-    is_line = src->data.buf[i] == '\n';
-    pos.line += is_line;
-    line_idx = (is_line)  * (i + 1) +
-               (!is_line) * line_idx;
-  }
-  pos.column += tok_start - line_idx;
-  return pos;
+struct ast_node {
+  enum ast_type type;
+  struct ast_node *child;
+  u64 child_amount;
+  struct string data_str;
+  u64 data_int;
+};
+
+struct ast_node *
+tokens_to_ast(struct token *tokens) {
+  (void)tokens;
+  io_clear();
+  io_append_cstr("tokens_to_ast: todo");
+  io_println();
+  return 0;
 }
 
 /* entry point */
@@ -602,30 +807,29 @@ void
 _start(void) {
   struct source src;
   struct token *tokens;
+  struct ast_node *ast;
   u64 i;
 
   io_make();
 
-  src = file_to_source("./first.sk");
+  src    = file_to_source("./first.sk");
   tokens = source_to_tokens(&src);
+  ast    = tokens_to_ast(tokens);
+  (void)ast;
 
+  io_clear();
   for (i = 0; i < tape_len(tokens); i++) {
-    struct token_position pos = token_get_position(&src, &tokens[i]);
-    struct string str = token_to_string(tokens[i].type);
-    assert(string_builder_append_cstr(&io, "token["), 0);
-    assert(string_builder_append_u64(&io, i), 0);
-    assert(string_builder_append_cstr(&io, "] = { "), 0);
-    assert(string_builder_append(&io, &str), 0);
-    assert(string_builder_append_cstr(&io, " '"), 0);
-    assert(string_builder_append(&io, &tokens[i].data), 0);
-    assert(string_builder_append_cstr(&io, "' "), 0);
-    assert(string_builder_append_u64(&io, pos.line), 0);
-    assert(string_builder_append_cstr(&io, ":"), 0);
-    assert(string_builder_append_u64(&io, pos.column), 0);
-    assert(string_builder_append_cstr(&io, " }\n"), 0);
+    struct source_position pos = token_get_position(&src, &tokens[i]);
+    if (tokens[i].type != TKN_IDEN) continue;
+    (void)source_error_location_to_io(&src, &pos);
+    io_append_cstr("test of identifier error '");
+    io_set_bold_white();
+    io_append(&tokens[i].data);
+    io_reset();
+    io_append_cstr("'\n");
+    (void)token_invalid_to_io(&src, &tokens[i]);
   }
-
-  assert(string_builder_print(&io), 0);
+  io_print();
 
   exit(0);
 }
