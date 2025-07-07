@@ -564,7 +564,7 @@ source_invalid_to_io(struct source *src, u64 index, u64 len) {
   for (i = 0; i < idx_on_line; i++) io_append_char(' ');
   io_set_bold_red();
   io_append_char('^');
-  if (len) {
+  if (len > 1) {
     for (i = 0; i < len - 1; i++) io_append_char('~');
   }
   io_reset();
@@ -704,7 +704,7 @@ source_to_tokens(struct source *src) {
           case '=': {
             if (source_peek(src, 0) == '>') {
               (void)source_chop(src);
-              tok->data.len++;
+              tok_data.len++;
               NEW_TOKEN(TKN_ASSIGN_BOD);
             } else {
               NEW_TOKEN(TKN_ASSIGN_VAR);
@@ -820,9 +820,10 @@ _start(void) {
   io_clear();
   for (i = 0; i < tape_len(tokens); i++) {
     struct source_position pos = token_get_position(&src, &tokens[i]);
-    if (tokens[i].type != TKN_IDEN) continue;
+    struct string type = token_to_string(tokens[i].type);
     (void)source_error_location_to_io(&src, &pos);
-    io_append_cstr("test of identifier error '");
+    io_append(&type);
+    io_append_cstr(" '");
     io_set_bold_white();
     io_append(&tokens[i].data);
     io_reset();
