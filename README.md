@@ -5,7 +5,7 @@ Current version: 0.1.0
 
 ## Hello, World!
 ```py
-def main : () => ext std.io.write("Hello, World!\n");
+main ::= () => ext std.io.write("Hello, World!\n");
 ```
 
 ## Philosophy
@@ -17,48 +17,45 @@ __Stark__, as it's name suggests, is a language that focus on:
 
 The main focus of the language is performance and type safety.
 
+## Expressions
+There are no statements in Stark. Literally everything is an expression that returns something. If nothing needs to be returned than it returns `void`, but `void` itself still is something and can be assigned.
+
+Every expression that its not used to compose another expression should be terminated via a semicolon. 
+
+Every [variable](#Variables) or [constant](#Constants) should be used inside at least one expression. The same rule goes to expression values, they must be used inside another expression.
+
+If the expression returns `void` it doesn't need to be used by other expressions.
+
 ## Functions
 ### Function definition and calling conventions
-Functions are defined using the `def` keyword, followed by an identifier, followed by the constant assignment operator `:`, then the argument list `(arg0 = type0, arg1 = type1, ...)`, next the return type, followed by the body assignment operator `=>` and finally an expression, that expression is the function body:
+Functions are defined by using an identifier, followed by the constant definition and assignment operator `::=`, then the argument list `(arg0 : type0, arg1 : type1, ...)`, next the return type, followed by the body assignment operator `=>` and finally an expression, that expression is the function body:
 ```py
-def func_name : (arg0 = type0, arg1 = type1, ...) return_type => func_body_expr;
+func_name ::= (arg0 : type0, arg1 : type1, ...) return_type => func_body_expr;
 ```
 
 Functions always returns the expression at the function body result.
 
 A basic function that returns a sum of two numbers would be defined as:
 ```py
-def sum : (a = i32, b = i32) i32 => a + b;
+sum ::= (a : i32, b : i32) i32 => a + b;
 ```
 
 To call a regular function:
 ```py
-def foo : (_a = i32, _b = i32) =>;
+foo ::= (_a : i32, _b : i32) =>;
 foo(10, 12);
 ```
 
 But if it takes exactly one parameter the parenthesis are optional:
 ```py
-def foo : (_x = i32) =>;
+foo ::= (_x : i32) =>;
 foo 10;
-```
-
-And if it takes exactly two parameters it can be called as an 'infix call' `x foo y`, where `x` and `y` are parameters and `foo` is the function:
-```py
-def foo : (_a = i32, _b = i32) =>;
-10 foo 12;
-```
-
-Chaining infix function calls is possible (see the [precedence table](#Precedence-table)):
-```py
-def foo : (_a = i32, _b = i32) =>;
-2 foo 4 foo 6; # equivalent to (2 foo 4) foo 6 
 ```
 
 Trailing commas are allowed:
 ```py
-def foo : (x = i32, y = i32, z = i32,) i32 => x+y+z;
-def _ = foo(1, 2, 3,);
+foo ::= (x : i32, y : i32, z : i32,) i32 => x+y+z;
+_ := foo(1, 2, 3,);
 ```
 
 ### Identifier naming rules
@@ -75,36 +72,38 @@ abc__0123 # valid identifier
 ### Unused arguments
 Unused arguments causes a compile-time error:
 ```py
-def sum : (a = i32, b = i32, c = i32) i32 => a + b; # error: 'c' is unused
+sum ::= (a : i32, b : i32, c : i32) i32 => a + b; # error: 'c' is unused
 ```
 
 To supress the error put an underscore as a prefix on the argument name:
 ```py
-def sum : (a = i32, b = i32, _c = i32) i32 => a + b; # valid
+sum ::= (a : i32, b : i32, _c : i32) i32 => a + b; # valid
 ```
 
-### Void return type
-For functions with no return value use [void](#The-void-type) as the return type:
+### Return nothing
+If a function is supposed to not return anything then simply omit the return type:
 ```py
-def foo : () void =>;
+foo ::= () =>;
 ```
 
-`void` is inferred if no return type is provided:
+You can also use the [type alias](#Type-aliases) [void](#The-void-type) if you like:
+```
+```
 ```py
-def foo : () =>;
+foo ::= () void =>;
 ```
 
 ### Multiple return values
 Multiple return values aren't possible, but you can use a [struct](#Structs) instead:
 ```py
-def div : (a, b = i32) (bool, i32) => b == 0 ? (false, 0) : (true, a/b);
-def (is_div_by_zero, res) = div(4, 2);
+div ::= (a, b : i32) (i32, bool) => if b == 0 => (0, false) else => (a/b, true);
+(is_div_by_zero, res) := div(4, 2);
 ```
 
 ### Expression blocks
 For functions with more then one expression use an expression block.
 ```py
-def foo : () => {
+foo ::= () => {
   expr0;
   expr1;
 };
@@ -112,7 +111,7 @@ def foo : () => {
 
 If an early break from the expression block is required use the `brk` keyword:
 ```py
-def do_more_stuff : () => {
+do_more_stuff ::= () => {
   do_stuff();
   do_stuff();
   brk;
@@ -120,9 +119,9 @@ def do_more_stuff : () => {
 };
 ```
 
-By default expression blocks do not return any value. Use the `brk` keyword followed by one expression to break from the expression block with a return value:
+By default expression blocks [return nothing](#Return-nothing). Use the `brk` keyword followed by one expression to break from the expression block with a return value:
 ```py
-def do_stuff_and_sum : (x = i32, y = i32) i32 => {
+do_stuff_and_sum ::= (x : i32, y : i32) i32 => {
   do_stuff();
   do_stuff();
   brk x + y;
@@ -131,16 +130,16 @@ def do_stuff_and_sum : (x = i32, y = i32) i32 => {
 
 Because expression blocks are also just expressions they can be nested:
 ```py
-def foo : () => {
+foo ::= () => {
   { };
   { };
 };
 ```
 
-### Break and return from expression blocks
-Keep in mind that the `brk` keyword only breaks from the current expression block scope:
+#### Break and return from expression blocks
+Keep in mind that the `brk` keyword only breaks from the current expression [block-scope](#Scoping):
 ```py
-def foo : () => {
+foo ::= () => {
   {
     brk;
     do_stuff(); # will not be executed
@@ -151,7 +150,7 @@ def foo : () => {
 
 If you want to return from all nested expression blocks at once use the `ret` keyword:
 ```py
-def foo : () => {
+foo ::= () => {
   {
     ret;
     do_stuff(); # will not be executed
@@ -162,7 +161,7 @@ def foo : () => {
 
 And of course, `ret` also can have an expression as a return value:
 ```py
-def five : () i32 => {
+five ::= () i32 => {
   {
     ret 5; # 5 is returned from the function
     do_stuff(); # will not be executed
@@ -173,7 +172,7 @@ def five : () i32 => {
 
 The `brk` expression can be nested:
 ```py
-def foo : () => {
+foo ::= () => {
   {
     {
       brk brk;
@@ -189,7 +188,7 @@ This isn't a special rule, `brk` is an expression and because `brk` accepts an e
 
 Because of this you can nest it infinitely:
 ```py
-def foo : () => {
+foo ::= () => {
   {
     {
       {
@@ -207,10 +206,10 @@ def foo : () => {
 };
 ```
 
-And of course you can add non-`brk` expressions to it. Again this is not special semantics, it's all the same thing:
+And of course you can add non-`brk` expressions to it. Again this is not special semantic, it's all the same thing:
 ```py
-def foo : () => {
-  def x = {
+foo ::= () => {
+  x := {
     {
       brk brk 10;
       do_stuff(); # not executed
@@ -225,13 +224,13 @@ The verbosity of too many nested `brk`s is intentional. It indicates that you're
 
 And of course, `brk` and `ret` only works inside expression-blocks.
 ```py
-def fo : () i32 => ret 10; # error: 'ret' outside expression-block
+foo ::= () i32 => ret 10; # error: 'ret' outside expression-block
 ```
 
 ### Defer expression
 You can defer an expression to the end of an expression-block using the `defer` keyword. The deferred expression will run even if you used `brk` or `ret` to early return from an expression-block:
 ```py
-def main() => {
+main ::= () => {
   defer println("end");
   println("start");
 };
@@ -245,7 +244,7 @@ end
 
 The order of multiple defers is based on their definitions. The last defined runs first:
 ```py
-def main() => {
+main ::= () => {
   defer println("1");
   defer println("2");
   defer println("3");
@@ -261,7 +260,7 @@ The output will be:
 
 Because the expression returned by a `brk` runs on the outside block, if a `defer` is returned it'll be deferred to the outside expression-block:
 ```py
-def main() => {
+main ::= () => {
   defer println("1");
   {
     defer println("2");
@@ -284,51 +283,50 @@ The output will be:
 ### Variable and constant arguments
 Most functions arguments are variables, so they can be defined in the same way (see more on [the variables section](#Variable-definitions)):
 ```py
-def fn0 : (_x = i32) =>;
-def fn1 : (_x, _y = i32, _c = f32) =>;
-def fn2 : (_x = i32 1) =>; # default values have to be compile-time constants
-def fn3 : (_x, _y = i32 1) =>;
-def fn4 : (_x, _y = 0, _c, _d = 0.0) =>;
+fn0 ::= (_x : i32) =>;
+fn1 ::= (_x, _y : i32, _z : f32) =>;
+fn2 ::= (_x : i32 = 1) =>; # default values have to be compile-time constants
+fn3 ::= (_x, _y : i32 = 1) =>;
 ```
 
 The only exception is inferred types by value:
 ```py
-def foo : (_x = 0) =>; #error: argument with no explicit type
+foo ::= (_x := 0) =>; #error: argument with no explicit type
 ```
 
-Because function arguments are variables they also are [immutable](#Variable-mutability) by default. Make them mutable with the `mut` attribute:
+Because function arguments are variables they also are [immutable](#Variable-mutability) by default. Make them mutable with the `mut` modifier:
 ```py
-def foo : (_x = i32) => _x = 10; # invalid, '_x' is immutable
-def foo : (mut _x = i32) => _x = 10; # valid, '_x' is mutable
+foo ::= (_x : i32) => _x = 10; # invalid, '_x' is immutable
+foo ::= (_x : mut i32) => _x = 10; # valid, '_x' is mutable
 ```
 
 Functions can also have constant arguments:
 ```py
-def foo : (num : u64 0) u64 => num;
+foo ::= (num :: u64) u64 => num;
 ```
 
 That means that you can only pass constant parameters to those arguments:
 ```py
-def foo : (num : u64 0) u64 => num;
-def x = foo(10); # valid
-def y = foo(x); # invalid, x isn't a constant
+foo ::= (num :: u64) u64 => num;
+x := foo(10); # valid
+y := foo(x); # invalid, x isn't a constant
 ```
 
 Constant arguments always have to be the first ones in a function:
 ```py
-def foo : (variable = i32, constant : u64) =>; # invalid
-def foo : (constant : u64, variable = i32) =>; # valid
+foo ::= (variable : i32, constant :: u64) =>; # invalid
+foo ::= (constant :: u64, variable : i32) =>; # valid
 ```
 
 Constant arguments are the only place where you don't need to specify the constant value on definition (see more on [the constants section](#Constants)):
 ```py
-def foo : (num : u64) u64 => num;
+foo ::= (num :: u64) u64 => num;
 ```
 So the code above doesn't actually make a type aliases, instead it makes an u64 constant.
 
 Actually constant arguments _can't_ have a default constant value:
 ```py
-def foo : (num : u64 10) u64 => num; # error: constant argument with default value
+foo ::= (num :: u64 10) u64 => num; # error: constant argument with default value
 ```
 
 Keep in mind that non-compile-time functions with constant arguments, generates a new function every time they are used with a different constant value through out your program. This can lead to more 'bloated' executables, but the performance is not affected. 
@@ -336,62 +334,62 @@ Keep in mind that non-compile-time functions with constant arguments, generates 
 ### Compile-time functions
 If a function only accept constant parameters and do not access external non-constant data, it's garanteed to run at compile time.
 ```py
-def comp_sum : (a, b : i32) i32 => a + b;
-def x = comp_sum(12, 4); # 16 will be computed at compile-time
+comp_sum ::= (a, b :: i32) i32 => a + b;
+x := comp_sum(12, 4); # 16 will be computed at compile-time
 ```
 
 It's actually possible to run any function, that don't access external non-constant data, at compile time if you pass compile-time known values as its arguments and use the `@` operator:
 ```py
-def sum : (a, b = i32) i32 => a + b;
-def x = @sum(12, 4); # 16 will be computed at compile-time despite 'sum' accepting variable parameters
+sum ::= (a, b : i32) i32 => a + b;
+x := @sum(12, 4); # 16 will be computed at compile-time despite 'sum' accepting variable parameters
 ```
 
 If a function is only run at compile-time, and no function pointers are taken from it, it'll not be included on the binary. 
 
 You actually can pass a variable to a function ran at compile-time if the function do not read or write to it:
 ```py
-def taking_a_variable_for_some_reason : (_a = u32) =>;
-def a = get_some_u32();
+taking_a_variable_for_some_reason ::= (_a = u32) =>;
+a := get_some_u32();
 @taking_a_variable_for_some_reason(a); # valid, will be run at compile-time (in this case just optimised-out)
 ```
 
-You generally can't run functions at module scope, using the `@` operator you can:
+You generally can't run functions at [module-scope](#Scoping), using the `@` operator you can:
 ```py
-def foo : () => do_something();
+foo ::= () => do_something();
 
 foo(); # invalid
 @foo(); # valid
 
-def main : () =>;
+main ::= () =>;
 ```
 
-Keep in mind that the `@` operator means "at compile time". So functions ran at module-scope will be compile-time, and as such have to follow the non-constant data access and only constant parameters rules.
+Keep in mind that the `@` operator means "at compile time". So functions ran at [module-scope](#Scoping) will be compile-time, and as such have to follow the non-constant data access and only constant parameters rules.
 
-It's also possible to ensure that a function will always be run at compile-time one using `@` as a prefix on the function literal:
+It's also possible to ensure that a function will always be run at compile-time using `@` as a prefix on the function literal:
 ```py
-def comp_sum : @(a, b = i32) i32 => a + b;
-def x = @comp_sum(12, 4); # 16 will be computed at compile-time
+comp_sum ::= @(a, b :: i32) i32 => a + b;
+x := @comp_sum(12, 4); # 16 will be computed at compile-time
 ```
 
 Ensured-compile-time functions always have to be called via `@`:
 ```py
-def comp_sum : @(a, b = i32) i32 => a + b;
-def x = @comp_sum(12, 4); # valid
-def x = comp_sum(12, 4); # invalid
+comp_sum ::= @(a, b :: i32) i32 => a + b;
+x := @comp_sum(12, 4); # valid
+x := comp_sum(12, 4); # invalid
 ```
 
 If any compile-time function rules are broken it'll generate a compile-time error.
 
 Ensured-compile-time function gain access to variables and return values of [compile-time-only types](#Compile-time-only-primitive-types):
 ```py
-def type_of : @(T : imp type, _ = T) type => T;
-def a = u32;
-def b = @type_of(a) 10; # valid
+type_of ::= @(T :: imp type, _ : T) type => T;
+a : u32;
+b := @type_of(a) 10; # valid
 ```
 
 A compile-time function can call another compile-time function inside of it. Compile-time functions aren't some macro-like expansion thing, they literally run at compile-time. So calling a compile-time function inside of a compile-time function have the same behavior of calling a normal function. With that recursion is fine:
 ```py
-def comp_fac : @(x : u32) u32 => x == 0 ? 1 : x * @comp_fac(x-1);
+comp_fac ::= @(x :: u32) u32 => if x == 0 => 1 else x * @comp_fac(x-1);
 ```
 
 The compile-time phase of the compiler is an interpreter of Stark byte-code. That's why this kind of stuff is fine.
@@ -399,81 +397,78 @@ The compile-time phase of the compiler is an interpreter of Stark byte-code. Tha
 ### Generic functions
 With constant arguments you can make generic functions using the `type` type:
 ```py
-def sum : (T : type, a, b = T) T => a + b;
+sum ::= (T :: type, a, b : T) T => a + b;
 ```
 
 It's also possible to use the `is` (see more on [the class section](#The-is-operator)):
 ```py
-def sum : (T : type is number, a, b = T) T => a + b;
+sum ::= (T :: type is number, a, b : T) T => a + b;
 ```
 
-### Unordered parameters
-Another way to call a function is with directly naming the argument to which you want to pass the parameter:
+### Unordered arguments
+Another way to call a function is with directly naming the parameter to which you want to pass the argument:
 ```py
-def foo : (a, b, c = i32) i32 => a+b+c;
-def _ = foo(.c = 10, .a = 4, .b = -15);
+foo ::= (a, b, c : i32) i32 => a+b+c;
+_ := foo(.c = 10, .a = 4, .b = -15);
 ```
 
-Works even for constant arguments:
+Works even for constant parameters:
 ```py
-def foo : (T : type, a, b, c = T) T => a+b+c;
-def _ = foo(.c = 10, .a = 4, .b = -15, .T : f32); # constant parameters use ':' instead of '='
+foo ::= (T :: type, a, b, c : T) T => a+b+c;
+_ := foo(.c = 10, .a = 4, .b = -15, .T = f32);
 ```
 
 This way you can leave the default arguments untouched:
 ```py
-def foo : (a = i32, b = i32 10, c = i32) i32 => a+b+c;
-def _ = foo(9, .c = 11);
+foo ::= (a : i32, b : i32 = 10, c : i32) i32 => a+b+c;
+_ := foo(9, .c = 11);
 ```
 
-If you use unordered paremeters to just skip an argument it's possible to continue to use the function call order:
+If you use unordered arguments to just skip an argument it's possible to continue to use the function call order:
 ```py
-def foo : (a = i32, b = i32 10, c, d = i32) i32 => a+b+c;
-def _ = foo(9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
+foo ::= (a : i32, b : i32 = 10, c, d : i32) i32 => a+b+c;
+_ := foo(9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
 ```
 
-With that in mind if an argument has a default that parameter is optional:
+With that in mind if a parameter has a default the argument is optional:
 ```py
-def foo : (a, b = i32, c = i32 10) i32 => a+b+c;
-def _ = foo(9, 11);
+foo ::= (a, b : i32, c : i32 = 10) i32 => a+b+c;
+_ := foo(9, 11);
 ```
 
-You can only mix named and unnamed paremeters to skip arguments. So if this mix occur, and the named arguments don't actually follow the function order specified on definition, it'll cause an error:
+You can only mix named and unnamed arguments to skip parameters. So if this mix occur, and the named arguments don't actually follow the function order specified on definition, it'll cause an error:
 ```py
-def foo : (a = i32, b = i32 10, c, d = i32) i32 => a+b+c;
-def _ = foo(9, .c = 11, .b = 12); # error: invalid order
+foo ::= (a : i32, b : i32 = 10, c, d : i32) i32 => a+b+c;
+_ := foo(9, .c = 11, .b = 12); # error: invalid order
 ```
 
-This calling convention is the reason why [function types have their arguments names in it](#Functions-are-just-values).
+This calling convention is the reason why [function types have their parameters names in it](#Functions-are-just-values).
 
 ### Implicit constant parameters
-If a constant argument is used in some way by other arguments you can add the `imp` attibute to it. This will make that argument be implicitly defined based on it's first use:
+If a constant parameter is used in some way by other parameters you can add the `imp` attibute to it. This will make that argument be implicitly defined based on it's first use:
 ```py
-def add : (T : imp type is number, a, b = T) T => a+b;
-def x = add(1, 2);
-def y = add(1.6, 2.1);
-def y = add(1.6, 2); # error: an i32 is being passed to 'b' and expected a f32
+add ::= (T :: imp type is number, a, b : T) T => a+b;
+x := add(1, 2);
+y := add(1.6, 2.1);
+z := add(1.6, 2); # error: an i32 is being passed to 'b' and expected an f32
 ```
 
 If a constant argument is marked as `imp` it has to be used on at least one other non-imp argument:
 ```py
-def foo : (T : imp type is number, a, b = i32) i32 => a+b; # error: 'T' has to be used on other arguments
+foo ::= (T :: imp type is number, a, b : i32) i32 => a+b; # error: 'T' has to be used on other arguments
 ```
 
 You can still set the value of the constant parameter explictly using the unordered parameter function call:
 ```py
-def add : (T : imp type is number, a, b = T) T => a+b;
-def x = add(.T : u64, 1, 2);
+add ::= (T :: imp type is number, a, b : T) T => a+b;
+x := add(.T = u64, 1, 2);
 ```
 
-Infix and one-paremeter calls can be used with more than two or one paremeters if the extra ones are constant `imp` arguments:
+One-paremeter calls can be used with more than one paremeters if the extra ones are constant `imp` arguments:
 ```py
-def add : (T : imp type is number, a, b = T) T => a+b;
-def _ = 1 add 2; # valid
-def _ = 1.2 add 2.1; # valid
-def square : (T : imp type is number, a = T) T => a*a;
-def _ = square 5; # valid
-def _ = square 5.5; # valid
+square ::= (T :: imp type is number, a : T) T => a*a;
+_ := square 5; # valid
+_ := square 5.5; # valid
 ```
 
 ### Immutable arguments are references
@@ -481,52 +476,52 @@ Immutable arguments that have a value bigger than a register size (usually 8 or 
 
 So you don't need to explicitly pass immutable pointers around for big structs, like you would do it in C. It is actually more performant if you don't use immutable pointers to just pass values because inlining becomes a possibility:
 ```py
-def foo : (x = *Big_Struct) Something => x.something;
-def bar : (x = Big_Struct) Something => x.something;
-def big = Big_Struct;
-def _ = foo(&big);
-def _ = bar(big); # performance for this is the same as 'foo' or better if inlined
+foo ::= (x : *Big_Struct) Something => x.something;
+bar ::= (x : Big_Struct) Something => x.something;
+big : Big_Struct;
+_ := foo(&big);
+_ := bar(big); # performance for this is the same as 'foo' or better if inlined
 ```
 
 It is not possible to take the address of immutable arguments because they actually can be references and that could be dangerous:
 ```py
-def foo : (x = Big_Struct) => do_something(&x); # error: can't take address of immutable variable
+foo := (x : Big_Struct) => do_something(&x); # error: can't take address of immutable variable
 ```
 
 ### Implicit address on argument
-If the convenience of not taking the address is desired for pointer arguments is desired (for instance, [operator overloading](#Operators-are-overload-sets)), you can add the `&` attribute to a pointer argument. This signals that an implicit address will be taken:
+If the convenience of not taking the address for pointer arguments is desired (for instance, [operator overloading](#Operator-overload)), you can add the `&` attribute to a pointer argument. This signals that an implicit address will be taken:
 ```py
-def foo : (_x = &*Big_Struct) =>;
-def a = Big_Struct;
+foo ::= (_x : &*Big_Struct) =>;
+a := Big_Struct;
 foo(a); # equivalent to foo(&a)
 ```
 
 Because these arguments are just pointers, pointers can still be directly passed:
 ```py
-def foo : (_x = &*Big_Struct) =>;
-def a = Big_Struct;
-def ptr = &a;
+foo ::= (_x : &*Big_Struct) =>;
+a : Big_Struct;
+ptr := &a;
 foo(ptr); # valid
 foo(&a); # valid
 ```
 
-Also works for mutable pointers:
+It also works for mutable pointers:
 ```py
-def foo : (x = &*mut Big_Struct) => x.something = get_something();
-def a = mut Big_Struct;
+foo ::= (x : &*mut Big_Struct) => x.something = get_something();
+a : mut Big_Struct;
 foo(a); # valid
 ```
 
 ### Variadic arguments
 There is no variadic arguments syntax. Most of the time you actually just want to pass a [slice](#Slices) of a single type:
 ```py
-def print_nums : (nums = [..]i32) => for i in 0..<len(nums) => println("%", [1]);
+print_nums ::= (nums : [..]i32) => for i in 0..<len(nums) => println("%", [1]);
 print_nums [1, 2, 3, 4];
 ```
 
 But if you truly want to accept any type, for a custom printing function or something of that sort, use a slice of [anyrt](#The-anyrt-type). This is how `print` and `println` are implemented:
 ```py
-def custom_print : (fmt = str, args = [..]anyrt) => ...;
+custom_print ::= (fmt : str, args : [..]anyrt) => ...;
 custom_print("% % % %", [1, 1.0, "1", [1, 1, 1]]);
 ```
 
@@ -535,31 +530,31 @@ But only use it if it's really necessary, `anyrt` costs more than just a specifi
 ### Functions are just values
 Functions are just values assigned to [constants](#Constants) with function types. So you can create an anonymous function using a function literal and call it directly:
 ```py
-def num = (x, y = i32) i32 => x + y;(10, 20); # num is assigned to 30
+num := ((x, y : i32) i32 => x + y)(10, 20); # num is assigned to 30
 ```
 
 The type of a function looks something like this:
 ```py
-fn(const_arg0 : type0, const_arg1 : type1, var_arg0 = type0, var_arg1 = type1) return_type
+fn(const_arg0 :: type0, const_arg1 :: type1, var_arg0 : type0, var_arg1 : type1) return_type
 ```
 
 Here are some examples with functions and what the type will look like:
 ```py
-def square_i32 : (x = i32) i32            => x*x;
-def square_any : (T : type is number, x = T) T    => x*x;
-def sum_i32    : (x, y = i32) i32         => x+y;
-def sum_any    : (T : type is number, x, y = T) T => x+y;
-def set_any_x  : (T : type, foo = T)      => foo.x = something();
-# square_i32 type: fn(x = i32) i32
-# square_any type: fn(T : type is number, x = T) T
-# sum_i32 type:    fn(x = i32, y = i32) i32
-# sum_any type:    fn(T : type is number, x = T, y = T) T
-# set_any_x type:  fn(T : type is number, x = T, y = T) void
+square_i32 ::= (x : i32) i32                     => x*x;
+square_any ::= (T :: type is number, x : T) T    => x*x;
+sum_i32    ::= (x, y : i32) i32                  => x+y;
+sum_any    ::= (T :: type is number, x, y : T) T => x+y;
+set_any_x  ::= (T :: type, foo : T)              => foo.x = something();
+# square_i32 type: fn(x : i32) i32
+# square_any type: fn(T :: type, x : T) T
+# sum_i32 type:    fn(x : i32, y : i32) i32
+# sum_any type:    fn(T :: type, x : T, y : T) T
+# set_any_x type:  fn(T :: type, x : T, y : T)
 ```
 
 With that in mind you can define a function without [type inference](#Type-inference):
 ```py
-def sum_any : fn(T : type is number, x = T, y = T) T (T : type is number, x, y = T) T => x+y;
+sum_any :: fn(T :: type, x : T, y : T) T = (T :: type is number, x, y : T) T => x+y;
 ```
 
 But this is extremely verbose.
@@ -568,53 +563,63 @@ But this is extremely verbose.
 
 Because of the 'functions are just values' mindset nested functions are simple:
 ```py
-def foo : () => {
-  def bar : (x, y = i32) i32 => x + y;
+foo ::= () => {
+  bar ::= (x, y : i32) i32 => x + y;
 };
 ```
 
 Function literals assigned to constants are considered 'named functions'. This is basicaly taking adventage of [constant scoping](#Constant-scoping) and not actually a seperate feature. I.e. recursion is possible:
 ```py
-def foo : (x = i32) => foo(x + 1); # completely valid
+foo ::= (x : i32) => foo(x + 1); # completely valid
 ```
 
 ### Function pointers
-Variables can't have the function types, only constants. For variables use function pointers instead.
+Variables can't have function types, only constants. For variables use function pointers instead.
 
 To assign a function pointer to a variable you take its address:
 ```py
-def foo : () =>;
-def a = &foo;
+foo ::= () =>;
+a := &foo;
 ```
 
 This would be an error:
 ```py
-def foo : () =>;
-def a = foo; # error: trying to assign function type to variable
+foo ::= () =>;
+a := foo; # error: trying to assign function type to variable
 ```
 
 Function literals can be assigned directly to variables if you take its address:
 ```py
-def a = &(x = i32) i32 => x*x;
+a := &(x : i32) i32 => x*x;
 ```
 
 The code above is basically creating an anonymous function and assigning its address to the variable.
 
 You can't use recursion on functions assigned directly to variables because they're anonymous:
 ```py
-def a = &(x = i32) i32 => a(x)*x; # error: a is undefined
+a := &(x : i32) i32 => a(x)*x; # error: a is undefined
 ```
 
 Function pointers can't have constant arguments. To get a function pointer from a function with constant arguments you have to do the following:
 ```py
-def square : (T : type is number, x = T) T => x*x;
-def ptr_to_square_i32 = &square(i32);
-def ptr_to_square_f32 = &square(f32); # different pointer from 'ptr_to_square_i32'
+square ::= (T :: type is number, x : T) T => x*x;
+ptr_to_square_i32 := &square(i32);
+ptr_to_square_f32 := &square(f32); # different pointer from 'ptr_to_square_i32'
 ```
 
 The type of a function pointer looks like this:
 ```py
-*fn(name0 = type0, name1 = type1, ...) return_type # function pointer
+*fn(name0 : type0, name1 : type1, ...) return_type
+```
+
+Because the name of parameters is part of the type, you can't assign functions with same structure but different parameter names:
+```py
+add : *fn(a : i32, b : i32) i32 = &(x, y : i32) i32 => x+y; # error: types differ
+```
+
+But [casting](#Function-casting) is possible:
+```py
+add : *fn(a : i32, b : i32) i32 = &((x, y : i32) i32 => x+y) -> *fn(a : i32, b : i32) i32; # error: types differ
 ```
 
 Obviously is not possible to take the mutable address of a function, so mutable function pointers aren't a thing.
@@ -625,17 +630,17 @@ There are basically three ways of passing functions as arguments:
 2. Constant arguments with function type
 3. Constant arguments with [overload](#Overloads) type
 ```py
-def some_overload : [a = number](a, a) a;
-def foo : (fn = *(i32, i32) i32, x, y = i32) i32 => fn(x, y);
-def bar : (fn : function, x, y = i32) i32 => fn(x, y);
-def bar : (fn : some_overload, x, y = i32) i32 => fn(x, y);
+some_overload ::= [a : number](a, a) a;
+foo ::= (fun : *fn(x : i32, y : i32) i32, x, y : i32) i32 => fun(x, y);
+bar ::= (fun :: fn(x : i32, y : i32) i32, x, y : i32) i32 => fun(x, y);
+baz ::= (fun :: some_overload, x, y : i32) i32 => fun(x, y);
 ```
 
 The function pointer one will have memory, so it can be assigned to things.
 
 The overload one will accept all functions that are part of that overload_set.
 
-And the function type one will accept any function.
+And the function type one will accept any function with that type signature.
 
 ## Constants
 Constants are immutable compile-time known values.
@@ -645,262 +650,396 @@ Keep in mind that everything that is named on the language is either a [variable
 So named functions are constants, named structs are constants, named modules are constants and so on.
 
 ### Constant definitions
-To define a constant use the `def` keyword followed by an identifier and the constant assignment operator `:`. After that a compile-time known value must be provided:
+Constants are defined by using an identifier, followed by the constant definition symbol `::`, followed by the type of the constant, then the assign operator `=` and finally it's constant value:
 ```py
-def thirty : 30;
+thirty :: i32 = 30;
+```
+
+The assignment is optional, if no value is provided it'll use the default value specified by the type:
+```py
+zero :: i32; # 'zero' is going to be equal to 0
+```
+
+Differently from [variables](#Variables) forward assignment of constant is not possible:
+```py
+const :: i32;
+const = 10; # error: constant reassignment
 ```
 
 ### Type inference
-You can optionally provide a type explicitly to a constant definition:
+If you omit the type in between the `::` and `=` the type will be inferred based on the value:
 ```py
-def thirty : i32 30;
+FOO ::= 10;
 ```
 
-For more info into what type a literal infer check the [inference table](#Type-inference-by-value-table).
+To see more on how inference is determined check the [inference table](#Type-inference-by-value-table).
 
 ### Type aliases
-Differently from [variables](#Assignment-after-definition), constants can't be assigned after definition. If you define a constant to be equal to a type, you'll instead create a type aliases:
+If you set the value of a constant to be equal to a type, the constant will be a type alias:
 ```py
-def int : i32; # int is a type alias of i32
-def foo (x = int) int => x*x+x;
-def my_i32 = i32 foo 10; # valid
+int ::= i32; # int is a type alias of i32
+double ::= (x : int) int => x+x;
+my_i32 : i32 = double 10; # valid
 ```
 
 the type of a type alias is... `type`. So you can define it explicitly:
 ```py
-def int : type i32; # int is a type alias of i32
+int :: type = i32; # int is a type alias of i32
 ```
 
 You can also create distinct type aliases using the `type()` constructor: 
 ```py
-def int : type(i32); # int is its own distinct type
-def foo (x = int) int => x*x+x;
-def my_i32 = i32 foo 10; # invalid, int != i32
+int ::= type(i32); # int is its own distinct type
+double ::= (x : int) int => x+x;
+my_i32 : i32 = double 10; # invalid, int != i32
 ```
 
 ### Multiple constants definitions at once
 It's also possible to define multiple constants at once separating them by commas:
 ```py
-def FOO, BAR : 10; # both will have anyi type with 10 as the value
+FOO, BAR ::= 10; # both will have anyi type with 10 as the value
 ```
 
 With this a function can have multiple names:
 ```py
-def foo, foo_alternative : (x = i32) i32 => x*x+x; # Both foo and foo_alternative will have the same function address
-def foo_alternative2 : foo; # This also generates a constant with the same function address
+foo, foo_alternative ::= (x = i32) i32 => x*x+x; # Both foo and foo_alternative will have the same function address
+foo_alternative2 ::= foo; # This also generates a constant with the same function address and type
 ```
 
 ### Constant scoping
-When a constant is defined it'll become available to all the current scope and all scopes inside the current scope. So forward declaring is possible:
+When a constant is defined it'll become available to all the current and nested scopes. So forward declaration is possible:
 ```py
-def bar_squared : () i32 => BAR*BAR;
-def BAR : 10;
+BAR_SQUARED ::= BAR*BAR; # BAR_SQUARED == 100
+BAR ::= 10;
 ```
 
 This is particularly good for functions:
 ```py
-def square_and_sum : (x, y = i32) i32 => square x + square y;
-def square : (x = i32) i32 => x*x;
+square_and_sum ::= (x, y : i32) i32 => square x + square y;
+square ::= (x : i32) i32 => x*x;
+```
+
+If you use a forward declared constant A to define a constant B, and at the same time use constant B to define constant A an error will occur:
+```py
+FOO ::= BAR;
+BAR ::= FOO; # error: no value can be determined
+```
+
+This does not influence functions, though. The function body is completely unrelated to the value assigned to a constant, the constant internally is just an address to said function. So this is totally fine:
+```py
+foo ::= (x : i32) i32 => if x == 0 => bar(x) else =>      1;
+bar ::= (x : i32) i32 => if x == 0 =>      0 else => foo(x);
+```
+
+Naturally, recursiveness on constant values is not possible:
+```py
+FOO ::= FOO + 1; #error: no value can be determined
+```
+
+But as [explained before](#Functions-are-just-values), recursion on functions is possible. Keeping the fact that the body of a function does not influence the constant at all:
+```py
+fact ::= (x : i32) i32 => switch x (
+  0  => 1,
+  or => x * fact(x-1),
+);
 ```
 
 ### Constant shadowing
-It's possible to shadow a constant in nested scopes:
+Shadowing is often allowed in most languages. This is an absurd mistake, it brings a lot of errors and harder to maintain code. Constant shadowing can be traded by better naming.
+
+Because of this shadowing of constants is disallowed:
 ```py
-def TEN : 10;
-def foo : () => {
-  def TEN : 20; # for this scope only 'TEN' will be 20
-};
-def TEN_AGAIN : TEN; # 'TEN_AGAIN' will be 10
+TEN ::= 10;
+TEN ::= 20; # error: redefining 'TEN'
 ```
 
-You can't shadow a constant in the same scope:
+Even on different scopes:
 ```py
-def TEN : 10;
-def TEN : 20; # invalid, 'TEN' is already defined
+TEN ::= 10;
+{
+  TEN ::= 20; # error: redefining 'TEN'
+};
 ```
 
 ### Unused constants
 Similarly to [unused arguments](#Unused-arguments), unused constants also throw compile errors:
 ```py
-def FOO : 10; # error: 'FOO' is never used
+FOO ::= 10; # error: 'FOO' is never used
 ```
 
 You solve this in the same way unused arguments did: add an underscore at the start of the identifier:
 ```py
-def _FOO : 10; # valid
+_FOO ::= 10; # valid
 ```
 
 ## Variables
 Variables are very similar to [constants](#Constants). The main difference is that variables are runtime values.
 
 ### Variable definitions
-To define a constant use the `def` keyword followed by an identifier and the variable assignment operator `=`. It's similar to constants, infact you can define it in the same way constants can be defined:
+Variables are defined by using an identifier, followed by the variable definition symbol `:`, followed by the type of the constant, then the assign operator `=` and finally it's value:
 ```py
-def x = 1; # inferred integer
-def y = i32 2; # explicit type
-def a, b, c = 345; # Multiple variables inferred as the same type
-def e, f, g = i32 678; # Multiple variables defined with an explicit type
+x : i32 = 10;
 ```
 
-The first main difference between variable and constant definitions is type aliasing. You can't make a variable type alias.
-
-This:
+In fact all the ways of defining a constant are aplicable to variables:
 ```py
-def x = i32;
+x : i32 = 1; # explicit type with value
+a, b : i32 = 2; # multiple variables defined with explicit type and value
+y := 3; # inferred type by value
+c, d := 4; # multiple variables defined with inferred type by value
+z : i32; # defined with just a type with it's default value (0 in this case)
+e, f : i32; # multiple variables defined with just a type with it's default value (0 in this case)
 ```
-Will actually create a variable 'x' with type 'i32' initialized to 0.
 
-This syntax also works for multiple variable definitions at once:
+### Variable mutability
+All variables are immutable by default and cannot be assigned to after its definition.
 ```py
-def x, y = i32; # both x and y are of type 'i32' and initialized to 0
+x := 10;
+x = 20; # error: 'x' is immutable
 ```
+
+Forward assigning of immutable variables is possible. But only if the variable is not read before it:
+```py
+x : u32;
+x = 20; # valid
+
+y : u32;
+z := y;
+y = 10; # error: 'y' is immutable
+```
+
+If you're forward assigning with an `if` expression, the variable has to be assigned in a conditionless else:
+```py
+x : u32;
+if something => x = 20;
+else         => x = 0; # valid
+
+y : u32;
+if something => y = 20;
+# error: 'y' may be uninitialized
+```
+
+If mutability is a needed factor for a variable use the `mut` modifier on its definition:
+```py
+x : mut i32 = 10;
+x = 20; # valid, x is mutable
+```
+
+Keep in mind that `mut T` is not a distinct type from `T`. `mut` is a variable modifier, not a type one.
+
+`mut` can be used on values as well. This will mean "this value can only be assigned to mutable variables":
+```py
+x : mut i32 = mut 1; # valid
+y :     i32 = mut 1; # error: trying to assign mutable value to immutable variable
+```
+
+This is not allowed:
+```py
+x : mut = 1; # error: 'mut' modifier without type
+```
+
+The correct way of inferring the type of a variable and make it mutable is using mutable values:
+```py
+x := mut 1;
+x += 1; # valid, 'x' is mutable
+```
+
+`var := value` will always generate an immutable variable, even if `value` is mutable:
+```py
+x := mut 1; # 'x' is mutable
+y := x; # 'y' is immutable
+```
+
+So if a function returns a mutable value you will need to use `mut` explicitly when inferring the type:
+```py
+counter ::= (x : i32) mut i32 => x+1;
+x := mut counter(0); # valid
+y := counter(x); # error: assigning mutable value to immutable variable
+```
+
+The decision of this design was made to avoid creating mutable variables without the user knowing.
 
 ### Default initialization
 When you define a variable without giving it a default value it'll always default to 0 ([or whatever the default value is](#Default-values)).
 
 If you want to garbage initialize a variable, for performance or whatever reasons, you can do so explicitly:
 ```py
-def x = i32 ---; # defaults to stack garbage
+x : mut i32 = ---; # defaults to stack garbage
 ```
 
-### Variable mutability
-All variables are immutable by default and cannot be assigned to after its definition.
+Stack garbage initialization can only be done on mutable variables:
 ```py
-def x = 10;
-x = 20; # invalid, x is immutable
+x : i32 = ---; # error: '---' can only be used on mutable variables
 ```
 
-Forward assigning is possible. But only if the variable is not read from before it:
+And can only be used at the variable definition:
 ```py
-def x = u32;
-x = 20; # valid
-def y = u32;
-def z = y;
-y = 10; # invalid, 'y' is immutable
+x : i32 = 1;
+x = ---; # error: '---' can't be assign to variable post-definition
 ```
 
-If you're forward assigning with an `if` expression, the variable has to be assigned in a conditioless else:
+Forward assignment with it is not possible:
 ```py
-def x = u32;
-if something => x = 20;
-else => x = 0; # valid
-def y = u32;
-if something => y = 20;
-# error: 'y' may be unassigned
+x : i32;
+x = ---; # error: '---' can't be assign to variable post-definition
 ```
 
-If mutability is a needed factor for a variable use the `mut` attribute on its definition:
+And obviously the type can't be inferred from `---`:
 ```py
-def x = mut 10;
-x = 20; # valid, x is mutable
-def y = mut i32;
-y = 10; # valid, y is mutable
+x := ---; # error: can't infer type from '---'
 ```
 
 ### Variable assignment
-A variable assignment is also an expression, it returns `void`. But if you wrap the assignment in parenthesis then it actually returns the value of the assigned variable after it's definition:
+A variable assignment is also an expression, it returns `void`. But if you wrap the assignment in pipes then it actually returns the value of the assigned variable after it's definition:
 ```py
-def x = mut i32 get_x();
-def y = (x = x * 2 + 1);
+x := mut 1;
+y := |x = x + 1|; # y == 2
 ```
 
 All of the assignment operators works in that way, including `++` and `--`:
 ```py
-def x = mut i32 get_x();
-def y = (x++);
+x := mut 1;
+y = |x++|; # y == 2
 ```
 
 The prefix `++` and `--` only differ with the parethesis assignment syntax:
 ```py
-def x = mut get_x();
+x := mut 1;
 x++; # exatcly the same as ++x
 ++x; # exatcly the same as x++
-def y = (x++); # assign x to y then increment x
-def y = (++x); # increment x then assign x to y
+y := |x++|; # assign x to y then increment x
+z := |++x|; # increment x then assign x to z
 ```
+
+This also works for variable definitions:
+```py
+y := |x := 10|; # equivalent to 'x, y := 10'
+```
+
+If you wrap a variable definition on parentheses you'll actually be creating a nameless struct:
+```py
+y := (x := 10); # error: assigning struct to variable
+```
+
+Keep in mind that when assigning a variable assignment to another variable you will create a variable of type `void`, as said before:
+```py
+x := mut 1;
+y := x++; # y == ()
+```
+
+So you have to remember:
+- `x = x + 1` = `()`
+- `|x = x + 1|` = `x + 1`
+- `|x := 10|` = `10`
+- `(x := 10)` = new struct defined, even though it's an invalid struct (see the [structs](#Structs) section for more information)
 
 ### Variable aliasing
-You can create an alias to a variable. Simply start to define a new variable an it's value has to be `var` followed by a valid variable:
+No copies will be made when creating an immutable variable if the following conditions are met:
+1. The new defined variable value is just another variable. E.g. `y := x;`
+2. The new defined variable is immutable
+3. The source variable is immutable, or it's not modified during the lifetime of the new variable
+4. The lifetime of the source variable is equal to or greater than the lifetime of the new variable
+
+When these conditions are met the new variable is actually just an alias. So don't be afraid to assign by value:
 ```py
-def x = mut i32;
-def y = var x;
-def _ = &y == &x; # true, both are variables of the same type with the same address
+x := 0;
+y := x; # no actual copy is made
 ```
 
-`y` will not be a pointer to `x`. `x` and `y` literally become the same thing.
+This also aplies to field members of [structs](#Structs):
+```py
+foo : Some_Struct;
+y := foo.x; # no actual copy is made
+```
 
 ### Unused variables and the '_' identifier
 It's exactly the same situation as [unused constants](#Unused-constants) or [unused arguments](#Unused-arguments):
 ```py
-def x = 10; # error: 'x' is never used
-def _x = 10; # valid
+x := 10; # error: 'x' is never used
+_x := 10; # valid
 ```
 
 The `_` identifier is a special one. It can be defined numerous times inside the same scope and it's not possible to read its value:
 ```py
-def _ = 10;
-def _ = 20;
-def x = _; # error, '_' is not defined
+_ := 10;
+_ := 20;
+x := _; # error, '_' is not defined
 ```
 
 The value inside `_` is immediataly thrown way and not stored in memory.
 
 This is particularly useful for functions. Function return values _have_ to be used, so this is a way to signal that the value does not matter:
 ```py
-def five : () i32 => 5;
+five ::= () i32 => 5;
 five(); # error: unhandled return value
-def _ = five(); # result is thrown away
+_ := five(); # valid, result is thrown away
 ```
 
 You can also name function arguments as '_', this is particularly great for values that you don't care about in callbacks:
 ```py
-def some_callback : (a, b = u32, _ = u32, _ = f32) u32 => a + b;
+some_callback ::= (a, b, _ : u32, _ : i32, _ : f32) u32 => a + b;
 ```
 
-It's also possible to define `_` as a constant as well. This is useful for getting rid of compile-time functions return values at [module scope](#Module-scope):
+It's also possible to define `_` as a constant as well. This is useful for getting rid of compile-time functions return values at [module-scope](#Scoping):
 ```py
-def foo : () i32 => return_some_i32();
+foo ::= () i32 => return_some_i32();
 
 @foo(); # invalid, unused return value
-def _ : @foo(); # valid
+_ ::= @foo(); # valid
 
-def main : () =>;
+main ::= () =>;
 ```
 
 Technically you can do the same thing using just the variable `_` instead of the constant one. But this is good if in the future you want this value to be a constant:
 ```py
-def _ : @foo(); # before
-def easy_change : @foo(); # after
+_ ::= @foo(); # before
+easy_change ::= @foo(); # after
 ```
 
 ### Variable scoping
-it works differently than [constant scoping](#Constant-scoping). A variable cannot be forward declared.
-
-### Variable shadowing
-Exactly the same as [constant shadowing](Constant-shadowing).
-
-### Global variables
-variables can be defined on [module scope](#Module-scope). Their default values must be constant and they can't be assigned on module scope, even forward assignment isn't allowed:
+Differently from [constants](#Constant-scopint), variables cannot be forward declared:
 ```py
-def x = i32;
-x = 10; # error: assignment on module scope
-def main : () =>;
+x := y*y; # error: 'y' is not defined
+y := 10;
 ```
 
-You can reference variables on module scope for assignment of other variables or constants:
+### Variable shadowing
+Shadowing of variables is disallowed:
 ```py
-def x = i32 10;
-def y = x; # valid
-def FOO : x; # valid
-def main : () =>;
+x := 1;
+x := 2;
+```
+
+Use mutable variables instead:
+```py
+x := mut 1;
+x = 2;
+```
+
+For a more in-depth reasoning of this decision see the [constant scoping section](#Constant-scoping);
+
+### Global variables
+variables can be defined on [module-scope](#Scoping). Their default values must be constant and they can't be assigned on module-scope, even forward assignment isn't allowed:
+```py
+x : i32;
+x = 10; # error: assignment on module-scope
+main ::= () =>;
+```
+
+You can reference variables on [module-scope](#Scoping) for assignment of other variables or constants:
+```py
+x := 10;
+y := x; # valid
+FOO ::= x; # valid
+main ::= () =>;
 ```
 
 But if the variable is mutable you can't:
 ```py
-def x = mut i32 10;
-def y = x; # error: 'x' isn't a constant or an immutable variable
-def FOO : x; # error: 'x' isn't a constant or an immutable variable
-def main : () =>;
+x := mut 10;
+y := x; # error: 'x' isn't a constant or an immutable global variable
+FOO ::= x; # error: 'x' isn't a constant or an immutable global variable
+main ::= () =>;
 ```
 
 ## Primitive types
@@ -919,6 +1058,7 @@ There are two types of primitive types, the ones that can be assigned to runtime
 - __Strings:__
   - _Regular string (generally 16 or 12 bytes):_ `str`
   - _C string (generally 16 or 8 bytes):_ `cstr`
+- _Vector (128-512 bytes):_ `vec(T, N)`
 
 ### Compile-time-only primitive types
 None of the compile-time-only primitives have a size
@@ -929,7 +1069,6 @@ None of the compile-time-only primitives have a size
 - __Classes:__ `class`
 - __Spaces__: `spc`
 - __Foreign functions__: `unkfn`
-- __Variables aliases__: `var`
 
 This types are valid to use in constants and [ensured-compile-time functions](#Compile-time-functions).
 
@@ -937,16 +1076,39 @@ This types are valid to use in constants and [ensured-compile-time functions](#C
 Signed integers are represented using [two's complement](https://en.wikipedia.org/wiki/Two%27s_complement).
 
 ### The void type
-The `void` type is a special one. It's basically a type that doesn't hold any value.
+Differently from other languages `void` isn't a builtin type. That's why most of the places where you can put `void` you actually leave it empty. `void` is actually a builtin alias defined on the [base module](#The-base-module):
+```py
+void ::= @type_of ();
+```
 
-It's useful for returning nothing from a function or [making a pointer that points to anything](#Void-pointer).
+`()` is an expression that returns nothing. Passing that to the `type_of` function gets you the type of nothing.
+
+Expressions that return `void` as its type don't need to be used or assigned to a variable.
+```py
+foo ::= () =>;
+foo(); # fine 'foo' returns 'void', thus it don't need to be used or assigned to a variable
+```
+
+It is possible to make variables with the `void` type:
+```py
+x := ();
+```
+
+`void` variables don't hold any value or have size, but they do have an address. Because of this the next variable created will actualy have the same address as the `void` variable:
+```py
+x := ();
+y := 10;
+z := &x == &y; # z = true
+```
+
+The main use for the nothing type is when a function needs to return nothing or [making a pointer that points to anything](#Void-pointer).
 
 ### Strings
 Strings are UTF-8 enconded non-null-terminated.
 
 The layout of a string in memory (illustrated as a struct) looks like this:
 ```py
-def str : (
+str ::= (
   data        = *u8,
   length      = u32,
   bytes_count = u32,
@@ -961,17 +1123,17 @@ C strings are similar, but they don't have a `bytes_length` field, they're ASCII
 #### Raw string literals
 Theres a way to transform a series of tokens into string literals directly: use `$` followed by an identifier, then you need to write the same identifier again. Everything in between the identifiers will become part of the string, the first and last white spaces do not count:
 ```py
-def _  = $end hello, world! end;
+_ := $end hello, world! end;
 ```
 
 The above raw string literal is equivalent to:
 ```py
-def _ = "hello, world!";
+_ := "hello, world!";
 ```
 
 Because the string only ends when the specified identifier is reached you don't need any escaping:
 ```py
-def _ = $end
+_ := $end
 My name is: "John Doe"
 I'm '20' years old
 end
@@ -979,12 +1141,12 @@ end
 
 The above raw string literal is equivalent to:
 ```py
-def _  = "My name is: \"John Doe\"\nI'm '20' years old"
+_  := "My name is: \"John Doe\"\nI'm '20' years old"
 ```
 
 You can add constant binds to the raw string. In between the `$` and the identifier add parenthesis, inside the parenthesis you can create constants that works on the string. To reference the constant binding put the specified identifier in between `$`:
 ```py
-def _ = $(NAME : "John Doe", AGE : 20) end
+_ := $(NAME ::= "John Doe", AGE ::= 20) end
 His name is $NAME$. $NAME$ is $AGE$ years old.
 $AGE$ is a good age. "$NAME$" is a good name.
 end
@@ -992,41 +1154,46 @@ end
 
 The above raw string literal is equivalent to:
 ```py
-def _ = "his name is John Doe. John Doe is 20 years old.\n20 is a good age. \"John Doe\" is a good name";
+_ := "his name is John Doe. John Doe is 20 years old.\n20 is a good age. \"John Doe\" is a good name";
+```
+
+If there is no definition of the constant bind being referenced, it'll just format to `$<identifier>$`:
+```py
+_ := $end $TEN$ end # equivalent to "$TEN$"
 ```
 
 You can bind any constant into the raw string constants:
 ```py
-def TEN : 10;
-def _ = $(X : TEN) end $X$ $X$ $X$ end; # equivalent to "10 10 10"
+TEN ::= 10;
+_ := $(X ::= TEN) end $X$ $X$ $X$ end; # equivalent to "10 10 10"
 ```
 
 If you want the constant bind and the constant itself to share the same name you can do this as a shortcut:
 ```py
-def TEN : 10;
-def _ = $(TEN, ELEVEN : 11) end $TEN$ $TEN$ $TEN$ $ELEVEN$ end; # equivalent to "10 10 10 11"
+TEN ::= 10;
+_ := $(TEN, ELEVEN ::= 11) end $TEN$ $TEN$ $TEN$ $ELEVEN$ end; # equivalent to "10 10 10 11"
 ```
 
 You can also bind every constant defined on _the current scope_ using `(*)`:
 ```py
-def TEN : 11;
-def FOO : "foo";
-def _ = $(*) end $TEN$_$FOO$ end; # equivalent to "10_foo"
+TEN ::= 11;
+FOO ::= "foo";
+_ := $(*) end $TEN$_$FOO$ end; # equivalent to "10_foo"
 ```
 
 Remember `(*)` only works for definitions on the current scope:
 ```py
-def TEN : 10;
+TEN ::= 10;
 {
-  def FOO : "foo"; 
-  def _ = $(*) end $TEN$_$FOO$ end; # equivalent to "$TEN$_foo"
-}
+  FOO ::= "foo"; 
+  _ := $(*) end $TEN$_$FOO$ end; # equivalent to "$TEN$_foo"
+};
 ```
 
 Use `(*)` only in tight packed scopes because the risk of an override of an actual word and a predefined constant is high:
 ```py
-def hello : "world";
-def _ = $(*) end $hello$, $world$! end; # equivalent to "world, $world$!"
+hello ::= "world";
+_ := $(*) end $hello$, $world$! end; # equivalent to "world, $world$!"
 ```
 
 This can be a little dumb with this example, but it can be dangerous if you actually want a thing warpped around `$`s to be part of the string.
@@ -1044,10 +1211,9 @@ Ranges are a range between two integers: the starting index and the ending index
 30..20; # error: starting index has to be smaller then or equal to the ending index
 ```
 
-Ranges with the `..` syntax are inclusive. This means that the ending index is included if the ranges is used on a [for loop](#For-loop) or [slice](#Slices).
+Ranges with the `..` syntax are inclusive. This means that the ending index is included if the range is used on a [for loop](#For-loop) or [slice](#Slices).
 
 For an exclusive range use `..<`. Exclusive ranges can't haver the starting index and ending index being the same value:
-```py
 ```py
 0..<4;
 9..<9; # error: starting index has to be smaller then the ending index
@@ -1056,15 +1222,204 @@ For an exclusive range use `..<`. Exclusive ranges can't haver the starting inde
 
 Ranges can be assigned to constants:
 ```py
-def RANGE : 2..5;
+RANGE ::= 2..5;
 ```
 
 You can access the starting index and the ending index of range with the `.start` and `.end` members:
 ```py
-def RANGE : 2..5;
-def starting_index = RANGE.start;
-def ending_index = RANGE.end;
+RANGE ::= 2..5;
+starting_index := RANGE.start;
+ending_index   := RANGE.end;
 ```
+
+### Vectors
+Vectors are a builtin type that uses SIMD instructions under the hood.
+
+You define a vector by using the following syntax:
+```py
+pos : vec(T, N);
+```
+
+Where `T` is a type and `N` is the vector length.
+
+You can use [array literals](#Arrays) to define a vector with a set of values:
+```py
+a : vec(f32, 3) = [1.0, 2.0, 3.0];
+b : vec(f32, 3) = [3]0.5;
+```
+
+You can also use vector literals:
+```py
+v := vec(1.0, 2.0, 3.0);
+```
+
+All vector literal arguments have to be of the same type:
+```py
+v := vec(1.0, 2, 3.0); # error: type discrepancy
+```
+
+The actual type of the vector will only be revealed by context (see the [inference table](#Type-inference-by-value-table)) for more:
+```py
+v := vec(1, 2, 3);
+x : u64 = v.x; # because of this context the type of 'v' is 'vec(u64, 3)'
+```
+
+A vector can only be of a predefined amount of types. The maximum length of a vector depends on the type and the architecture you're targetting.
+
+Here's a table specifying the valid types and their maximum length per maximum bytes supported for an architecture:
+| Type  | 128-bits | 256-bits | 512-bits |
+|-------|----------|----------|----------|
+| bool  | 16       | 32       | 64       |
+| f32   | 4        | 8        | 16       |
+| f64   | 2        | 4        | 8        |
+| i8    | 16       | 32       | 64       |
+| u8    | 16       | 32       | 64       |
+| i16   | 8        | 16       | 32       |
+| u16   | 8        | 16       | 32       |
+| i32   | 4        | 8        | 16       |
+| u32   | 4        | 8        | 16       |
+| i64   | 2        | 4        | 8        |
+| u64   | 2        | 4        | 8        |
+| isize | 2 or 4   | 4 or 8   | 8 or 16  |
+| usize | 2 or 4   | 4 or 8   | 8 or 16  |
+
+If you use a length that is not supported by your target architecture will generate an error:
+```py
+# target architecture support only up to 128-byte vectors
+pos : vec(f64, 4); # error: 'vec(f64, 4)' isn't supported on current target architecture
+```
+
+If the architecture you're targetting does not support SIMD vector instructions then using `vec(T, N)` will generate an error:
+```py
+# SIMD isn't supported on target architecture
+pos : vec(f32, 4); # error: 'vec(f32, 4)' isn't supported on current target architecture
+```
+
+The minimum supported length for a vector is 2:
+```py
+a : vec(f32, 1); # error: vector of size 1
+```
+
+All operations available for scalars (the four basic operations `+`, `-`, `*`, `/`, bitwise operations `>>`, `<<`, `|`, `&`, `~`, and boolean operations `!=`, `==`, `>`, `<`, `>=`, `<=`) are available for vectors as well:
+```py
+a := vec(1.0, 2.0);
+b := vec(3.0, 4.0);
+c := mut a + b;
+d := mut a - b;
+e := mut a * b;
+f := mut a / b;
+c += a;
+d -= a;
+e *= a;
+f /= a;
+# and so on...
+```
+
+The operations are per-component operations, including the boolean ones. Boolean operations will return a new vector of type `vec(bool, N)`:
+```py
+a := vec(1.0, 2.0, 3.0);
+b := vec(3.0, 2.0, 1.0);
+c := a == b; # c == vec(false, true, false)
+```
+
+As the rest of Stark, all operations are strongly typed:
+```py
+c := vec(1.0, 2.0, 3.0) + vec(4, 5, 6); # error: type mismatched operation
+```
+
+Operations between vectors and scalars are also possible:
+```py
+v := vec(1.0, 2.0);
+a := mut v + 2.0;
+b := mut v - 2.0;
+c := mut v * 2.0;
+d := mut v / 2.0;
+a += 2.0;
+b -= 2.0;
+c *= 2.0;
+d /= 2.0;
+# and so on...
+```
+
+You can access the member of a vector with the `[]` operator:
+```py
+v : mut vec(f32, 8);
+v[0] = 1;
+v[1] = 2;
+v[2] = 3;
+v[3] = 4;
+v[4] = 5;
+v[5] = 6;
+v[6] = 7;
+v[7] = 8;
+```
+
+You can also access the first 4 elements with the `.x` to `.w` and `.r` to `.a`:
+```py
+v : mut vec(f32, 4);
+v.x = 1; # same as 'v[0] = 1'
+v.y = 2; # same as 'v[1] = 2'
+v.z = 3; # same as 'v[2] = 3'
+v.w = 4; # same as 'v[3] = 4'
+v.r += 1; # same as 'v[0] += 1'
+v.g += 2; # same as 'v[1] += 2'
+v.b += 3; # same as 'v[2] += 3'
+v.a += 4; # same as 'v[3] += 4'
+```
+
+Swizzling is also possible between `.x` to `.w` and `.r` to `.a`:
+```py
+v0 : mut vec(f32, 4);
+v0.xy = [1.0, 2.0];
+v0.zw = [3.0, 4.0];
+v1 := mut v0.yx; # v1 is of type 'vec(f32, 2)' with the values '[1.0, 2.0]' 
+v0.rgb = [5.0, 6.0, 7.0];
+v0.ar *= 2.0;
+```
+
+Mixing `.xyzw` with `.rgba` is invalid:
+```py
+v : mut vec(f32, 4);
+v.xyba = [1.0, 2.0, 3.0, 4.0]; # error: invalid vector accessor '.xyba'
+```
+
+abcdefghijklmnopqrstuvwxyz
+
+With swizzling you can repeat a component up to the maximum vector length, the components can be in any order:
+```py
+# architecture support 512-byte vectors
+v : vec(f32, 4);
+_ := v.xyzw; # valid
+_ := v.xxxxxxxx; # valid
+_ := v.wzyxxyzw; # valid
+_ := v.bgraar; # valid
+_ := v.rrrrggggbbbbaaaa; # valid
+```
+
+This type of swizzling are good for vectors up to 4-lanes. For vectors with length greater than that you can swizzle using the syntax `v[idx0 idx1 idx2 idx3 ...]`:
+```py
+v : vec(i8, 64);
+_ := v[32 63 0 10];
+_ := v[0 0 0 0 0 0 0];
+```
+
+Keep in mind that the indices have to be constant for the swizzling to work:
+```py
+v : vec(i8, 64);
+[x, y, z] := 10, 11, 12;
+_ := v[x y z]; # error: swizzling with non-constant values
+```
+
+You can even use ranges (this will not create a [slice](#Slices), but a new vector):
+```py
+v : vec(i8, 64);
+_ := v[10..30];
+```
+
+Vectors are aligned to their byte width:
+- If the `@size_of(T)` times `N` is less than or equal to 16 the alignment is 16
+- If the `@size_of(T)` times `N` is in-between 17 and 32 the alignment is 32
+- If the `@size_of(T)` times `N` is in-between 33 and 64 the alignment is 64
 
 ### Type inference by value table
 | Value            | Decription       | Constant inferred type              | Variable inferred type                                            |
@@ -1114,6 +1469,7 @@ def ending_index = RANGE.end;
 | $END END         | Raw string lit   | str                                 | str                                                               |
 | 1..9             | Range literal    | range                               | range (Compile-time only)                                         |
 | 1..<9            | Range literal    | range                               | range (Compile-time only)                                         |
+| vec(...)         | Vector literal   | vec(T, N). 'T' being compile-time   | vec(T, N). T being runtime                                        |
 
 __Caveats and Notes:__
 * Passing constants with `anyi` type into mismatched integers will cause an error. E.g. constant with value 1234 passed to an `u8`
@@ -1127,15 +1483,14 @@ Every type has it's own set of default values:
 - _Floating points:_ Defaults to 0.0
 - _Strings:_ Defaults to ""
 - _Structs:_ Defaults to their members defaults
-- _Tuples:_ Defaults to their members defaults
 - _Unions:_ Defaults to the specified tag default value
 - _Arrays:_ Defaults to the default of their type
 
 ## Pointers
 You can grab a pointer to a variable using the `&` operator:
 ```py
-def a = 0;
-def ptr = &a;
+a   := 0;
+ptr := &a;
 ```
 
 The type of a pointer is represented by a `*` followed by the type that the pointer points to:
@@ -1148,23 +1503,23 @@ The type of a pointer is represented by a `*` followed by the type that the poin
 ### Dereferencing
 To dereference a pointer use the `*` operator, similarly to C:
 ```py
-def a = 12;
-def ptr = &a;
-def b = *ptr; # b = 12
+a   := 12;
+ptr := &a;
+b   := *ptr; # b = 12
 ```
 
 Accessing a member from a pointer to a [struct](#Structs) causes an implicit dereference:
 ```py
-def a = Some_Struct(.some_i32 = 12);
-def ptr = &a;
-def b = ptr.some_i32; # equivalent to 'def b = (*ptr).some_i32;'
+a   := Some_Struct(.some_i32 = 12);
+ptr := &a;
+b   := ptr.some_i32; # equivalent to 'b := (*ptr).some_i32;'
 ```
 
 Accessing the member from a pointer just to get it's address do not cause a dereference:
 ```py
-def a = Some_Struct(.some_i32 = 12);
-def ptr = &a;
-def ptr_to_some_i32 = &ptr.some_i32; # no dereference
+a   := Some_Struct(.some_i32 = 12);
+ptr := &a;
+ptr_to_some_i32 := &ptr.some_i32; # no dereference
 ```
 
 ### Pointer mutability
@@ -1174,34 +1529,53 @@ If you want to assign to the variable the pointers points to a mutable pointer i
 
 Use the `&mut` operator on a variable to take the mutable address from it. You can only make mutable pointers from mutable variables:
 ```py
-def a = 0;
-def ptr = &mut a; # invalid, 'a' isn't mutable
-def b = mut 0;
-def ptr_mut = &mut a; # valid, 'b' is mutable
+a       := 0;
+ptr     := &mut a; # invalid, 'a' isn't mutable
+b       := mut 0;
+ptr_mut := &mut a; # valid, 'b' is mutable
 ```
 
 Now assigning to dereferenced values is possible:
 ```py
-def a = mut 0;
-def ptr = &a;
+a   := mut 0;
+ptr := &a;
 *ptr = 10; # error: 'ptr' is not a mutable pointer
-def mut_ptr = &mut a;
+mut_ptr := &mut a;
 *mut_ptr = 10; # valid, now 'a' = 10
 ```
 
 Do not confuse `*mut` with `mut *`. `*mut` is a pointer that can change the value inside the address it's pointing to. `mut *` is a pointer that can change the actual address it points to:
 ```py
-def a = mut i32;
-def b = mut i32;
-def p0 = *mut i32 &a;
+a,b := mut 0;
+
+p0 : *mut i32 = &a;
 *p0 = 10; # valid, it's a mutable pointer
-p0 = &b; # invalid, 'p0' is a immutable variable
-def p1 = mut *i32 &a;
+p0  = &b; # invalid, 'p0' is a immutable variable
+
+p1 : mut *i32 = &a;
 *p1 = 10; # invalid, it's an immutable pointer
-p1 = &b; # valid, 'p1' is a mutable variable
-def p2 = mut *mut i32 &a;
+p1  = &b; # valid, 'p1' is a mutable variable
+
+p2 : mut *mut i32 = &a;
 *p2 = 10; # valid, 'p2' is a mutable pointer
-p2 = &b; # valid, 'p2' is a mutable variable
+p2  = &b; # valid, 'p2' is a mutable variable
+```
+
+Same thing for `&mut` vs `mut &`:
+```py
+a,b := mut 0;
+
+p0  := &mut a; # same as 
+*p0  = 10; # valid, it's a mutable pointer
+p0   = &b; # invalid, 'p0' is a immutable variable
+
+p1  := mut &a;
+*p1  = 10; # invalid, it's an immutable pointer
+p1   = &b; # valid, 'p1' is a mutable variable
+
+p2  := mut &mut a;
+*p2  = 10; # valid, 'p2' is a mutable pointer
+p2   = &b; # valid, 'p2' is a mutable variable
 ```
 
 ### Pointer arithimatic
@@ -1209,9 +1583,9 @@ It's not possible to use the `[]` operator to index through a pointer.
 
 But you can achieve something similar with pointer arithimatic:
 ```py
-def nums = [1, 2, 3];
-def ptr = &mut something;
-def x = *(ptr + 1); # equivalent to nums[1]
+nums := [1, 2, 3];
+ptr  := &mut something;
+x    := *(ptr + 1); # equivalent to nums[1]
 ```
 
 The only operations possible with pointers are: `+`, `-`, `+=`, `-=`, `++` prefix and suffix, `--` prefix and suffix.
@@ -1221,7 +1595,14 @@ Pointer's do not have bounds checking. It's not even possible because a pointer 
 ### Pointer definition
 Differently from other variable types, pointers cannot be initialized to nothing. This is because pointers don't have a default value and must always point to memory:
 ```py
-def ptr = *i32; # error: uninitialized pointer
+ptr : *i32; # error: uninitialized pointer
+```
+
+It's fine to [forward assign](#Variable-mutability), though:
+```py
+a := 0;
+ptr : *i32;
+ptr = &a; # valid
 ```
 
 This actually enables several advantages compared to pointers that permit something like `NULL` or `nullptr`:
@@ -1231,73 +1612,86 @@ This actually enables several advantages compared to pointers that permit someth
 
 Because of that reason it's not possible to initialize pointers to garbage:
 ```py
-def ptr = *i32 ---; # error: uninitialized pointer
+ptr : *i32 = ---; # error: uninitialized pointer
 ```
 
 Often you actually don't need a pointer that points to nothing. Though, sometimes when interacting with the OS, C APIs or something of that sort a nullable pointer is needed. Use an [optinal pointer](#Optional-pointer) on that occasions:
 ```py
-def ptr = ?*i32; # valid, initialized to 'null'
+ptr : ?*i32; # valid, initialized to 'null'
 ```
 
 Optional pointers can be initialized to garbage:
 ```py
-def ptr = ?*i32 ---; # valid: initialized to garbage
+ptr : ?*i32 = ---; # valid: initialized to garbage
 ```
 
 Do not abuse of optional pointers. Only use when strictly necessary.
 
 ### Void pointer
-[The void type](#The-void-type) is a type that holds no value. So a pointer to a `void` is basically a pointer to nothing, but because pointers must always point to something, they're a pointer to anything:
+[The void type](#The-void-type) is a type that holds no value. So a pointer to a `void` is basically a pointer to nothing, but because pointers must always point to something, you can treat it like a pointer to anything (no casting needed):
 ```py
-def a = i32;
-def b = f64;
-def c = Some_Struct;
-def ptr = mut *void &a;
+a := i32;
+b := f64;
+c := Some_Struct;
+ptr : mut *void;
+ptr = &a; # valid
 ptr = &b; # valid
 ptr = &c; # valid
-def ptr_to_some_struct = *Some_Struct ptr; # valid
+```
+
+But when you want to convert from a `*void` to a `*T` [casting](#Pointer-casting) is needed:
+```py
+a := i32;
+b := f64;
+ptr : mut *void;
+ptr = &a;
+ptr_to_i32 : *i32 = ptr -> *i32; # valid
+ptr = &b;
+ptr_to_f32 : *f32 = ptr; # error: casting needed
 ```
 
 It's not possible to dereference void pointers.
 
 ### Pointer comparison
-Pointer comparison is possible between pointers of same tipe or void:
+Pointer comparison is possible between pointers of same type or void:
 ```py
-def a = i8;
-def b = i8;
-def c = u8;
-def p0 = *i8 &a;
-def p1 = *u8 &c;
-def p2 = *i8 &b;
-def p3 = *void &a;
-def _ = p0 == p1; # error
-def _ = p0 == p2; # valid, _ = false
-def _ = p0 == p3; # valid, _ = true
+a  := i8;
+b  := i8;
+c  := u8;
+p0 := *i8 &a;
+p1 := *u8 &c;
+p2 := *i8 &b;
+p3 := *void &a;
+_  := p0 == p1; # error
+_  := p0 == p2; # valid, _ == false
+_  := p0 == p3; # valid, _ == true
 ```
 
 ### Taking the address of literals
 It's possible to take the address of literals:
 ```py
-def ptr = &10;
+ptr := &10;
 ```
 
 This is sugar for:
 ```py
-def _a = 10;
-def ptr = &_a;
+tmp := 10;
+ptr := &tmp;
 ```
 
 So the lifetime of the invisible variable created is the same as the variable it's assigned to.
 
+If you take the address of a literal at [module-scope](#Scoping) rather than block-scope, the memory for the variable will be allocated on static memory.
+
 Mutable addresses are also possible:
 ```py
-def ptr = &mut 10;
+ptr := &mut 10;
 ```
 
 Sugar for:
 ```py
-def _a = mut 10;
-def ptr = &_a;
+tmp := mut 10;
+ptr := &tmp;
 ```
 
 It works for any literal.
@@ -1307,60 +1701,62 @@ Arrays are a buffer of objects of the same type with a compile-time known length
 
 To define an array open and close square brackets `[]`, in between the square brackets put a positive integer literal or positive integer constant. Follow the brackets by the desired type of the array elements:
 ```py
-def arr = [10]i32;
+arr : [10]i32;
 ```
 
 All values inside of the array are defaulted if defined that way.
 
 It's possible to use array literals for non-default values:
 ```py
-def arr = [1, 2, 3]; # arr[0] == 1, arr[1] == 2, arr[2] == 3. Length of the array is 3
-def arr_explicit = [3]i32 [4, 5, 6]; # same thing, but the array type is explicit
+arr := [1, 2, 3]; # arr[0] == 1, arr[1] == 2, arr[2] == 3. Length of the array is 3
+arr_explicit : [3]i32 = [4, 5, 6]; # same thing, but the array type is explicit
 ```
 
 This type of array literal can have a type before it to ensure what the array type will be:
 ```py
-def arr = i32[1, 2, 3];
-def arr_explicit = [3]i32 i32[4, 5, 6]; # same thing, but the array type is explicit
+arr := i32[1, 2, 3];
+arr_explicit : [3]i32 = i32[4, 5, 6]; # same thing, but the array type is explicit
 ```
 
 Another way of writing an array literal is `[amount]default-value`:
 ```py
-def arr = [3]1.5; # arr[0] == 1.5, arr[1] == 1.5, arr[2] == 1.5. Length of the array is 3
-def arr = [3]f32 [3]1.5; # same thing, but the array type is explicit
+arr0 := [3]1.5; # arr0[0] == 1.5, arr0[1] == 1.5, arr0[2] == 1.5. Length of the array is 3
+arr0_explicit : [3]f32 = [3]1.5; # same thing, but the array type is explicit
+arr1 := f64[3]1.5; # arr1[0] == 1.5f64, arr1[1] == 1.5f64, arr1[2] == 1.5f64. Length of the array is 3
+arr1_explicit : [3]f64 = f64[3]1.5; # same thing, but the array type is explicit
 ```
 
 You can also define an array of implicit length based on the literal:
 ```py
-def arr = []u64 [1, 2, 3]; # equivalent to [3]u64
+arr : []u64 = [1, 2, 3]; # equivalent to [3]u64
 ```
 
 This is good for explicit typing the elements.
 
 You can also initialize arrays to garbage:
 ```py
-def arr = [3]u64 ---;
+arr : [3]u64 = ---;
 ```
 
 Array destructuring is possible, this is useful for creating multiple variable with different values:
 ```py
-def [a, b, c] = [1, 2, 3];
-def [c, d, e] = i32[1, 2, 3];
-def [f, g, h] = [3]1.5;
-def arr = [1, 2, 3];
-def [i, j, k] = arr;
+[a, b, c] := [1, 2, 3];
+[c, d, e] := i32[1, 2, 3];
+[f, g, h] := [3]1.5;
+arr       := [1, 2, 3];
+[i, j, k] := arr;
 ```
 
 And using the ['_' identifier](#Unused-variables-and-the-_-identifier) for skipping is possible:
 ```py
-def arr = [1, 2, 3];
-def [i, j, _] = arr;
+arr       := [1, 2, 3];
+[i, j, _] := arr;
 ```
 
 Mismatch variable definition with the array length isn't allowed:
 ```py
-def arr = [1, 2, 3];
-def [i, j] = arr; # error: expected 3 variable definitions, but found only 2
+arr    := [1, 2, 3];
+[i, j] := arr; # error: expected 3 variable definitions, but found only 2
 ```
 
 Arrays can have 0 length. The array will actually occupy 0 bytes, in other words, it does not exists in memory.
@@ -1368,23 +1764,23 @@ Arrays can have 0 length. The array will actually occupy 0 bytes, in other words
 ### Array mutability
 Because arrays actually store the data for modifying the values you just need to set the array as `mut`:
 ```py
-def arr0 = mut [1, 2, 3];
+arr0   := mut [1, 2, 3];
 arr0[0] = 4; # valid
-def arr1 = [1, 2, 3];
+arr1   := [1, 2, 3];
 arr1[0] = 4; # invalid, array is mutable
 ```
 
 ### builtin 'len'
 If an array length is needed you can use the builtin `len()`:
 ```py
-def arr = [1, 2, 3, 4, 5];
-def arr_len = @len(arr);
+arr     := [1, 2, 3, 4, 5];
+arr_len := @len(arr);
 ```
 
 `len()` is actually an [overload](#Overloads), not a function. But specifically the array function overload is an ensured-compile-time one, so the `@` operator is necessary.
 
 ### Passing arrays as parameters
-Because array values must have known compile-time length they can't be passed directly to function variable parameters.
+Because arrays must have known compile-time length they can't be passed directly to function variable parameters.
 
 There are four ways of passing an array as parameters:
 1. Same length arrays
@@ -1395,9 +1791,9 @@ There are four ways of passing an array as parameters:
 #### Passing same length arrays
 You technically can pass arrays as parameters if you specify the length:
 ```py
-def foo(_arr = [3]u32) =>;
-def arr0 = [1, 2, 3];
-def arr1 = [1, 2, 3, 4];
+foo ::= (_arr : [3]u32) =>;
+arr0 := [1, 2, 3];
+arr1 := [1, 2, 3, 4];
 foo(arr0); # valid
 foo(arr1); # error: expected [3]u32 found [4]u32
 ```
@@ -1406,37 +1802,37 @@ Following the [passing as reference rule](#Immutable-arguments-are-references) t
 
 To avoid several performance and semantic problems, arrays passed directly can't be mutable:
 ```py
-def foo(_arr = mut [3]u32) =>; # error: array argument can't be mutable
+foo ::= (_arr : mut [3]u32) =>; # error: array argument can't be mutable
 ```
 
-Insuring that arrays of the same length as passed to arguments can be useful sometimes. But most of the time a function wants to accept any array length, so this method isn't good for that.
+Insuring that arrays of the same length are passed to arguments can be useful sometimes. But most of the time a function wants to accept any array length, so this method isn't good for that.
 
 #### Passing arrays as pointers
 Arrays do not decay into pointers like in C, so this is invalid:
 ```py
-def foo(_arr = *u32) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (_arr : *u32) =>;
+nums := [1, 2, 3, 4];
 foo(nums); # error: expected *u32 found [3]u32
 ```
 
 Taking the address of just the array will give you a pointer to the array type:
 ```py
-def foo(_arr = *u32) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (_arr : *u32) =>;
+nums := [1, 2, 3, 4];
 foo(&nums); # error: expected *u32 found *[3]u32
 ```
 
-You could use casting to resolve this problem:
+You could use [casting](#Pointer-casting) to resolve this problem:
 ```py
-def foo(_arr = *u32) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (_arr : *u32) =>;
+nums := [1, 2, 3, 4];
 foo(&nums -> *u32); # valid
 ```
 
 Or preferably take the address of the first element:
 ```py
-def foo(_arr = *u32) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (_arr : *u32) =>;
+nums := [1, 2, 3, 4];
 foo(&nums[0]); # valid
 ```
 
@@ -1444,100 +1840,98 @@ The problem with passing arrays as pointers is the lost of the array length.
 
 To overcome this you could pass an extra argument to the function:
 ```py
-def foo(_arr = *u32, _arr_len = usize) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (_arr : *u32, _arr_len : usize) =>;
+nums := [1, 2, 3, 4];
 foo(&nums[0], @len(nums)); # valid
 ```
 
 It'll work, but this is extremely unsafe and cumbersome. Therefore, not recommended
 
 #### Passing array to constant arguments
-You can pass arrays of any length to constant arguments:
+You can pass arrays of any length using a constant parameter for the length:
 ```py
-def foo(_arr : []u32) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (N :: imp usize, _arr = [N]u32) =>;
+nums := [1, 2, 3, 4];
 foo(nums); # valid
 ```
 
 This is better than passing by pointer. The problem is that for every new array length that is passed a new version of the function is created. It's a viable option though, the performance will actually be great with compile-time catches on bound checks and compile-time known length.
-
-You can also enforce same length on different array parameters using the [imp](#Implicit-constant-parameters) attribute:
-```py
-def foo(N : imp usize, _arr0 : [N]u32, _arr1 : [N]u32) =>;
-def nums0 = [1, 2];
-def nums1 = [1, 2];
-def nums2 = [1, 2, 3];
-foo(nums0, nums1); # valid
-foo(nums0, nums2); # invalid
-```
 
 ## Slices
 Slices are views into arrays. They consist of a length and a pointer.
 
 To slice an an array use a [range](#Ranges) inside the index `[]`:
 ```py
-def arr = [6, 5, 4, 3, 2, 1];
-def slice = arr[2..4]; # slice[0] == 4, slice[1] == 3, slice[2] == 2, len(slice) == 3
+arr   := [6, 5, 4, 3, 2, 1];
+slice := arr[2..4]; # slice[0] == 4, slice[1] == 3, slice[2] == 2, len(slice) == 3
 ```
 
 If you want to make a slice from the beginning to the end of the array use an empty range:
 ```py
-def arr = [1, 2, 3];
-def slice = arr[..];
+arr   := [1, 2, 3];
+slice := arr[..];
 ```
 
 Or just set only the starting index or ending index:
 ```py
-def arr = [1, 2, 3, 4, 5, 6];
-def slice0 = arr[..3]; # 0 starting index is implied
-def slice1 = arr[2..]; # @len(arr)-1 ending index is implied
+arr    := [1, 2, 3, 4, 5, 6];
+slice0 := arr[..3]; # 0 starting index is implied
+slice1 := arr[2..]; # @len(arr)-1 ending index is implied
 ```
 
 You can use variables when slicing, but keep in mind that does have some runtime overhead for bounds checking:
 ```py
-def arr = [1, 2, 3, 4, 5, 6];
-def n = get_some_i32(); # supposed this returns 3 for some reason
-def slice = arr[..n]; # slice[0] == 1, slice[1] == 2, slice[2] == 3, len(slice) == 3
+arr   := [1, 2, 3, 4, 5, 6];
+n     := get_some_i32(); # supposed this returns 3 for some reason
+slice := arr[..n]; # slice[0] == 1, slice[1] == 2, slice[2] == 3, len(slice) == 3
 ```
 
 The type of a slice is `[..]<type>`, so use it to create a slice with an explicit type:
 ```py
-def arr = [1, 2, 3];
-def slice0 = [..]u32 arr[..];
-def slice1 = [..]i32 arr[..]; # error: can't make slice u32 array into i32 
+arr    := [1, 2, 3];
+slice0 : [..]u32 = arr[..];
+slice1 : [..]i32 = arr[..]; # error: can't make slice u32 array into i32 
 ```
 
 With explicit typed slices you can pass the array directly:
 ```py
-def arr = [1, 2, 3];
-def slice0 = [..]u32 arr; # valid
+arr   := [1, 2, 3];
+slice : [..]u32 = arr; # valid
 ```
 
 Similarly to pointers (because slices are basically just pointers), they can't be null and always have to point to some array:
 ```py
-def slice 0 = [..]i32; # invalid
+slice : [..]i32; # invalid
+```
+
+### Getting the length of a slice 
+Slices have a function in the builtin `len()` overload:
+```py
+arr    := [1, 2, 3];
+slice  := arr[..];
+amount := @len(slice);
 ```
 
 ### Passing array as slice
-This concludes the fourth method of [passing an array as a paremeter](#Passing-arrays-as-parameters). You simply just need to pass the array as an slice. This is the most preferred method for general use cases:
+This concludes the fourth method of [passing an array as a paremeter](#Passing-arrays-as-parameters). You simply just need to pass the array as a slice. This is the most preferred method for general use cases:
 ```py
-def foo(_arr = [..]u32) =>;
-def nums = [1, 2, 3, 4];
+foo ::= (_arr : [..]u32) =>;
+nums := [1, 2, 3, 4];
 foo(nums); # valid
 ```
 
 ### Array literals on slices
 Array literals can be sliced directly:
 ```py
-def slice = [..]u32 [1, 2, 3]; # makes slice from array literal
+slice : [..]u32 = [1, 2, 3]; # makes slice from array literal
 ```
 
 The slice still doesn't hold the actual data of the array. What this actually does is create an implicit array that will live through the current stack frame.
 
 This can be useful for some functions:
 ```py
-def sum : (xs = [..]i32) i32 => {
-  def res = 0;
+sum ::= (xs : [..]i32) i32 => {
+  res := 0;
   for x in xs => res += x;
   ret res;
 };
@@ -1545,216 +1939,239 @@ def x = sum([1, 2, 3, 4]); # x = 10
 def y = sum[1, 2, 3, 4]; # using the one paremeter call convention
 ```
 
-### Getting the length of a slice 
-Slices have a function in the builtin `len()` overload. It's not compile-time, so `@` isn't needed:
-```py
-def arr = [1, 2, 3];
-def slice = arr[..];
-def amount = len(slice);
-```
-
 ### Slice mutability
 The slices mutability is more akin to pointers than arrays. If you wan't to modify the values of an array through a slice you need a mutable slice using `[..]mut`:
 ```py
-def slice0 = [..]mut u32 [1, 2, 3];
+slice0 : [..]mut u32 = [1, 2, 3];
 slice0[1] = 4; # valid
-def slice1 = [..]u32 [1, 2, 3];
+slice1 : [..]u32 = [1, 2, 3];
 slice1[1] = 4; # invalid
 ```
 
 If the slice variable itself is marked as mutable, it means you can change the slice not the values:
 ```py
-def slice = mut [..]u32 [1, 2, 3];
-slice = [4, 5, 6]; # valid, new array assigned to slice
+slice : mut [..]u32 = [1, 2, 3];
+slice = [4, 5]; # valid, new array assigned to slice
 slice[1] = 4; # invalid
+```
+
+You can only pass mutable arrays to mutable slices:
+```py
+arr0 := mut [1, 2, 3];
+arr1 := [1, 2, 3];
+slice0 : [..]mut u32 = arr0; # valid
+slice1 : [..]mut u32 = arr1; # invalid
 ```
 
 ## Structs
 The definition of a struct is very similar to the [definition of a function](#Function-definition-and-calling-conventions). The difference is that you do not use the body assignemnt `=>`:
 ```py
-def Some_Struct : (member0 = type0, member1 = type1, member2 = type2, ...);
+Some_Struct ::= (member0 : type0, member1 : type1, member2 : type2, ...);
 ```
 
 It can facilitate to think of structs as "bodyless functions" because a lot of the arguments rules apply for them. But there are some differences.
 
 Members of a struct are, mostly, variables. So all of this declarations are valid:
 ```py
-def Some_Struct = (
-  a = u32, # explicit type with default initialization (0 in this case)
-  b, c = u32, # multi-member definition
-  d = u32 1, # explicit type with value
-  e, f, g = u32 2, # multi-member definition with explicit type and vlue
-  h, i = 4, # multi-member definition with inferred type by value
-  j = u32 ---, # garbage initialization
+Some_Struct ::= (
+  a       : u32,       # explicit type with default initialization (0 in this case)
+  b, c    : u32,       # multi-member definition
+  d       : u32 = 1,   # explicit type with value
+  e, f, g : u32 = 2,   # multi-member definition with explicit type and value
+  j       : u32 = ---, # garbage initialization
 );
 ```
 
 Similarly to function arguments, the only exception is inferred types by value:
 ```py
-def Some_Struct = (
-  a = 3, # error: member with no explicit type
+Some_Struct ::= (
+  a := 3, # error: member with no explicit type
 );
 ```
+
+You also can't have recursive members:
 ```py
+Point ::= (point : Point, x, y : i32); # Error: recursive member
 ```
 
-### Struct instantiation
-Regular struct instantion is also similar to [regular function calls](#Function-definition-and-calling-conventions):
+### Struct constructors
+Regular struct instantiation is also similar to [regular function calls](#Function-definition-and-calling-conventions):
 ```py
-def Some_Struct : (x, y = u32);
-def some_struct_instance = Some_Struct(10, 20);
+Point ::= (x, y : i32);
+p := Point(10, 20);
 ```
 
-Infix-call and one parameter like calls aren't valid on struct instantiation though:
+This type of instantiation is a "contructor".
+
+One parameter like calls aren't valid when calling a constructor:
 ```py
-def Foo : (x = u32);
-def Bar : (x, y = u32);
-def a = Foo 10; # invalid
-def b = 10 Foo 20; # invalid
+Foo ::= (x : u32);
+a := Foo 10; # invalid
 ```
 
 And of course, you can explicitly type an instance:
 ```py
-def Foo : (x = u32);
-def a = Foo Foo(10);
+Foo ::= (x : u32);
+a : Foo = Foo(10);
 ```
 
-An instance with no value will be initialized with all the default values specified on the struct:
+An instance with no value will be constructed with all the default values specified on the struct:
 ```py
-def Foo : (x = u32, y = u32 6);
-def a = Foo; # a is created with default values: 'a.x = 0' and 'a.y = 6'
+Foo ::= (x : u32, y : u32 = 6);
+a : Foo; # 'a' is created with default values: 'a.x = 0' and 'a.y = 6'
 ```
 
-Named members instantiation is also possible and follow the same rules as the [function ones](#Unordered-parameters):
+Unordered fields on constructor calls is also possible and follow the same rules as [functions unordered parameters](#Unordered-parameters):
 ```py
-def Foo : (a = i32, b = i32 10, c, d = i32);
-def _ = Foo(.c = 10, .a = 4, .b = -15, .d = 4);
-def _ = Foo(9, .c = 11, .d = 12);
-def _ = Foo(9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
-def _ = Foo(9, .c = 11, .b = 12); # error: invalid order
+Foo ::= (a : i32, b : i32 = 10, c, d : i32);
+_ := Foo(.c = 10, .a = 4, .b = -15, .d = 4);
+_ := Foo(9, .c = 11, .d = 12);
+_ := Foo(9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
+_ := Foo(9, .c = 11, .b = 12); # error: invalid order
 ```
 
-You can leave out any member at instantiation and it'll use it's default value:
+You can leave out any fields you want when calling a constructor. The field will use its default value:
 ```py
-def Foo : (a = i32, b = i32 10, c, d = i32);
-def _ = Foo(9); # a == 9, b == 10, c == 0, d == 0
-def _ = Foo(.d = 12); # a == 0, b == 10, c == 0, d == 12
-def _ = Foo(9, .c = 11); # a == 9, b == 10, c == 11, d == 0
+Foo ::= (a : i32, b : i32 = 10, c, d : i32);
+_ := Foo(9); # a == 9, b == 10, c == 0, d == 0
+_ := Foo(.d = 12); # a == 0, b == 10, c == 0, d == 12
+_ := Foo(9, .c = 11); # a == 9, b == 10, c == 11, d == 0
 ```
 
-Passing no arguments to the initialization will use initialize all of the members to their proper default values:
+Passing no arguments to the constructor will initialize all of the members to their proper default values:
 ```py
-def Foo : (a = i32, b = i32 10, c, d = i32);
-def _ = Foo(); # a == 0, b == 10, c == 0, d == 0
+Foo ::= (a : i32, b : i32 = 10, c, d : i32);
+_ := Foo(); # a == 0, b == 10, c == 0, d == 0
 ```
 
-It's similar to just using the type explicitly without no initialization:
+It's similar to defining a variable without a constructor:
 ```py
-def Foo : (a = i32, b = i32 10, c, d = i32);
-def _ = Foo(); # a == 0, b == 10, c == 0, d == 0
-def _ = Foo; # a == 0, b == 10, c == 0, d == 0
+Foo ::= (a : i32, b : i32 = 10, c, d : i32);
+_ := Foo(); # a == 0, b == 10, c == 0, d == 0
+_ :  Foo;   # a == 0, b == 10, c == 0, d == 0
 ```
 
-The difference is that you're explicitly assigning, so forward assigning is not an option:
+The difference is that you're explicitly assigning, so forward assignment is not an option:
 ```py
-def Foo : (a = i32, b = i32 10, c, d = i32);
-def a = Foo(); # a == 0, b == 10, c == 0, d == 0
-a = Foo(1, 2, 3, 4); # error: 'a' is immutable
+Foo ::= (a : i32, b : i32 = 10, c, d : i32);
+a := Foo(); # a == 0, b == 10, c == 0, d == 0
+a  = Foo(1, 2, 3, 4); # error: 'a' is immutable
 ```
 
-#### Implicit struct name on instantiation
-If a variable already has the type of a struct you can initialize it with the parenthesis directly, without the struct name:
+#### Implicit struct name on constructor calls
+If a variable already has the type of a struct you can call its constructor without the struct name:
 ```py
-def Vec2 : (x, y = f32);
-def a = Vec2;
-a = (1.2, 2.1); # x == 1.2, y == 2.1
+Vec2 ::= (x, y : f32);
+a := Vec2;
+a  = (1.2, 2.1); # x == 1.2, y == 2.1
 ```
 
 Works on function return values:
 ```py
-def Vec2 : (x, y = f32);
-def addv : (a, b = Vec2) Vec2 => (a.x+b.y, a.y+b.y);
+Vec2 ::= (x, y : f32);
+addv ::= (a, b : Vec2) Vec2 => (a.x+b.y, a.y+b.y);
 ```
 
 And on paremeters:
 ```py
-def Vec2 : (x, y = f32);
-def addv : (a, b = Vec2) Vec2 => (a.x+b.y, a.y+b.y);
-def _ = addv((1.1, 2.2), (3.3, 4.4)); # valid
-def _ = addv((), (3.3)); # valid
-def _ = addv((.y = 1.0, .x = 2.0), (3.0, 4.0)); # valid
+Vec2 ::= (x, y : f32);
+addv ::= (a, b : Vec2) Vec2 => (a.x+b.y, a.y+b.y);
+_ := addv((1.1, 2.2), (3.3, 4.4)); # valid
+_ := addv((), (3.3)); # valid
+_ := addv((.y = 1.0, .x = 2.0), (3.0, 4.0)); # valid
 ```
 
 This is particularly useful with [one-parem function calls](#Function-definition-and-calling-conventions):
 ```py
-def Vec2 : (x, y = f32);
-def double : (a = Vec2) Vec2 => (a.x*2, a.y*2);
-def _ = double(1.0, 2.0); # valid
+Vec2 ::= (x, y = f32);
+doublev ::= (a = Vec2) Vec2 => (a.x*2.0, a.y*2.0);
+_ := doublev(1.0, 2.0); # equivalent to 'double Vec2(1.0, 2.0)'
 ```
 
 #### Destructed struct instantiation
 You actually can instantiate a struct with all of it's members being actual variables in the main scope:
 ```py
-def Vec2 : (x, y = f32);
-def (x, y) = Vec2(1.0, 2.0);
+Vec2 ::= (x, y = f32);
+(x, y) := Vec2(1.0, 2.0);
 ```
 
 The variables created can have any name you want:
 ```py
-def (a, b) = Vec2(1.0, 2.0);
+(a, b) := Vec2(1.0, 2.0);
 ```
 
 You can skip fields using the ['_' identifier](#Unused-variables-and-the-_-identifier):
 ```py
-def Foo : (a, b, c = i32);
-def (_, b, _) = Foo(1, 2, 3);
+Vec3 ::= (x, y, z = f32);
+(_, y, _) := Vec3(1, 2, 3);
 ```
 
-Mismatch variable definition isn't allowed:
+Mismatched variable definition isn't allowed:
 ```py
-def Foo : (a, b, c = i32);
-def (a, b) = Foo(1, 2, 3); # error: expected 3 variable definitions, but found only 2
+(a, b) := Vec3(); # error: expected 3 variable definitions, but found only 2
+```
+
+You can also destruct with previously defined variables:
+```py
+a, b, c: f32;
+(a, b, c) = Vec3(); # valid
 ```
 
 ### Unnamed members
 Struct members can actually not have names:
 ```py
-def Some_Struct : (u32, named_member = f32);
+Some_Struct ::= (u32, named_member : f32);
 ```
 
-If that's the case you access the unnamed member via the order of unnamed member definition number, starting at 0. Named members do not count toward unnamed index positions:
+If that's the case you access the unnamed member via the index number of the unnamed member definition number, starting at 0:
 ```py
-def Some_Struct : (u32, named_member = f32, i32); # struct has '.0' as u32 and '.1' as i32
-def foo = Some_Struct(1, 2.0, -3);
-def a = foo.0; # a == 1u32
-def b = foo.1; # b == -3i32
-def c = foo.2; # error: '.2' is not a member of 'Some_Struct'
+Some_Struct : (u32, i32); # struct has '.0' as u32 and '.1' as i32
+foo := Some_Struct(1, -2);
+a   := foo.0; # a == 1u32
+b   := foo.1; # b == -2i32
+```
+
+Named members do not count on unnamed members indices:
+```py
+Some_Struct ::= (u32, named_member : f32, i32); # struct has '.0' as u32 and '.1' as i32
+foo := Some_Struct(1, 2.0, -3);
+a   := foo.0; # a == 1u32
+b   := foo.1; # b == -3i32
+c   := foo.2; # error: '.2' is not a member of 'Some_Struct'
+```
+
+Unamed members can have default values:
+```py
+Some_Struct : (u32 = 1, i32 = -2);
+foo := Some_Struct();
+a   := foo.0; # a == 1u32
+b   := foo.1; # b == -2i32
 ```
 
 #### Tuples
-If a struct only has unnamed variable members, this is equivalent to tuples in other languages. Because of this, these structs are also refered as tuples through out the specification:
+When a struct only has unnamed variable members it's equivalent to tuples in other languages. Because of this, these structs are also refered as tuples through out the specification:
 ```py
-Some_Tuple : (u32, f32, i32);
-def foo = Some_Tuple(1, 2.0, -3);
-def a = foo.0;
-def b = foo.1;
-def c = foo.2;
-def (x, y, z) = Some_Tuple(4, 5.0, -6);
+Some_Tuple ::= (u32, f32, i32);
+foo       := Some_Tuple(1, 2.0, -3);
+a         := foo.0;
+b         := foo.1;
+c         := foo.2;
+(x, y, z) := Some_Tuple(4, 5.0, -6);
 ```
 
 To define a tuple-like struct with only one member, a trailing comma is necessary:
 ```py
-def Foo : (u32); # 'Foo' is an alias to 'u32'
-def Bar : (u32,); # 'Bar' is a struct with one unnamed member
+Foo ::= (u32); # 'Foo' is an alias to 'u32'
+Bar ::= (u32,); # 'Bar' is a struct with one unnamed member
 ```
 
 ### Struct typing
 Struct types are always distinct, even if the underlying data is the same:
 ```py
-def Foo0 : (u32, u32);
-def Foo1 : (u32, u32);
-def a = Foo0(1, 2);
-def b = Foo1 a; # error: 'a' isn't of the type 'Foo1'
+Foo0 ::= (u32, u32);
+Foo1 ::= (u32, u32);
+a := Foo0(1, 2);
+b : Foo1 = a; # error: 'a' isn't of the type 'Foo1'
 ```
 
 See the [casting](#Casting) section for workarounds.
@@ -1762,332 +2179,344 @@ See the [casting](#Casting) section for workarounds.
 ### Struct mutability
 Forward assigning is still possible with immutable structs:
 ```py
-def Foo : (x = u32, y = u32 6);
-def a = Foo; # not initialized yet
+Foo ::= (u32, u32);
+a : Foo; # not initialized yet
 a = Foo(10, 20); # valid, initialized here
 ```
 
 For the forward assigning to work, not only the whole struct cannot be read, but members as well:
 ```py
-def Foo : (x = u32, y = u32 6);
-def a = Foo; # not initialized yet
-def b = a.x; # 'b = 0'
+Foo ::= (u32, u32);
+a : Foo; # not initialized yet
+b := a.x; # 'b == 0'
 a = Foo(10, 20); # invalid, 'a' is already initialized
 ```
 
 Forward declaring works only for the whole struct, if you try to assign to a member the struct is assumed to already be properly initialiazed:
 ```py
-def Foo : (x = u32, y = u32 6);
-def a = Foo;
+Foo ::= (u32, u32);
+a : Foo;
 a.x = 10; # invalid, 'a' is immutable
 ```
 
 For this to be possible, use a mutable instance:
 ```py
-def Foo : (x = u32, y = u32 6);
-def a = mut Foo; # initializes struct to 'x = 0' and 'y = 6'
-a.x = 10; # invalid, 'a' is immutable
+Foo ::= (u32 = 1, u32 = 2);
+a : mut Foo; # initializes struct to 'x = 1' and 'y = 2'
+a.x = 10; # valid, 'a' is mutable
 ```
 
-As most things in stark structs are anonymous. So it is possible to use the struct literal directly on a variable type, argument type, etc:
+As most things in stark, structs are anonymous. So it is possible to use the struct literal directly on a variable type, argument type, etc:
 ```py
-def foo = (x, y, z = i32); # Foo has the type '(x, y, z = i32)'
+foo : (x, y, z : i32); # Foo has the type '(x, y, z = i32)'
 foo = (1, 2, 3); # valid
 ```
 
-You can use the initialization on the struct literal directly:
+You can use the contructor on the struct literal directly:
 ```py
-def foo = (x, y, z = i32)(.z = 1, .x = 2, .y = 3); # valid
+foo := (x, y, z : i32)(.z = 1, .x = 2, .y = 3); # valid
 ```
 
 ### 'imm' and 'renege':
 Members mutabilities are based on the instance mutability. You can't use the `mut` attribute on field members:
 ```py
-def Some_Struct : (
-  x = mut u32, # error: members can't use the 'mut' attribute
+Some_Struct ::= (
+  x : mut u32; # error: members can't have the 'mut' modifier
 );
 ```
 
-But if you want to enforce _immutability_ there is the `imm` attribute. This attribute can only be used on struct members:
+But if you want to enforce _immutability_ there is the `imm` modifier:
 ```py
-def Some_Struct : (x = i32, y = imm u32);
-def a = mut Some_Struct;
+Some_Struct ::= (x : i32, y : imm u32);
+a : mut Some_Struct;
 a.x = 10; # valid, 'a' is mutable
 a.y = 20; # error: 'a.y' field is immutable
 ```
 
-To be able to modify the field member use the `renege` keyword:
+This modifier can only be used on struct members:
 ```py
-def Some_Struct : (x = i32, y = imm u32);
-def a = mut Some_Struct;
-renege a.y = 20; # valid
+a : imm i32; # error: 'imm' modifier is only valid on struct members
 ```
 
-The `renege` will only work on mutable instances:
+To be able to modify the field member use the `renege` keyword:
 ```py
-def Some_Struct : (x = i32, y = imm u32);
-def a = Some_Struct;
-renege a.y = 20; # error: 'a' is immutable
+Some_Struct ::= (x : i32, y : imm u32);
+a : mut Some_Struct;
+a.y renege = 20; # valid
+```
+
+`renege` will only work on mutable instances:
+```py
+Some_Struct ::= (x : i32, y : imm u32);
+a : Some_Struct;
+a.y renege = 20; # error: 'a' is immutable
+```
+
+You can mark a whole struct as `imm`:
+```py
+Some_Struct ::= imm (x : i32, y : u32);
+a : mut Some_Struct;
+a.x = 10; # error: 'a.x' field is immutable
+a.y = 20; # error: 'a.y' field is immutable
 ```
 
 ### Constant members
 Constant members are extremely similar to [functions constant arguments](#Variable-and-constant-arguments): They have to come before any variable member and they can't have default values:
 ```py
-def Vec2_0 : (x, y = T, T : type); # invalid
-def Vec2_1 : (T : type u32, x, y = T); # invalid
-def Vec2_2 : (T : type, y = T); # valid
+Vec2 ::= (x, y : T, T :: type); # invalid
+Vec2 ::= (T :: type = u32, x, y : T); # invalid
+Vec2 ::= (T :: type, x, y : T); # valid
 ```
 
 Instantiating a struct with a constant member follow all the previous rules established:
 ```py
-def Foo : (T : type is number, a = T, b = T 10, c, d = T);
-def _ = Foo(.c = 10, .a = 4, .b = -15, .d = 4, .T = i32);
-def _ = Foo(i32, 9, .c = 11, .d = 12);
-def _ = Foo(i32, 9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
-def _ = Foo(i32, 9, .c = 11, .b = 12); # error: invalid order
-def _ = Foo(i32); # a == 0, b == 10, c == 0, d == 0
-def _ = Foo(i32, .d = 12); # a == 0, b == 10, c == 0, d == 12
-def _ = Foo(i32, 9, .c = 11); # a == 9, b == 10, c == 11, d == 0
+Foo ::= (T :: type is number, a : T, b : T = 10, c, d : T);
+_ := Foo(.c = 10, .a = 4, .b = -15, .d = 4, .T = i32);
+_ := Foo(i32, 9, .c = 11, .d = 12);
+_ := Foo(i32, 9, .c = 11, 12); # a == 9, b == 10, c == 11, d == 12
+_ := Foo(i32, 9, .c = 11, .b = 12); # error: invalid order
+_ := Foo(i32); # a == 0, b == 10, c == 0, d == 0
+_ := Foo(i32, .d = 12); # a == 0, b == 10, c == 0, d == 12
+_ := Foo(i32, 9, .c = 11); # a == 9, b == 10, c == 11, d == 0
 ```
 
 The `imp` attribute can be used on constant members:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def _ = Vec2(1, 2); # T = i32
-def _ = Vec2(1.2, 2.1); # T = f32
+Vec2 ::= (T :: imp type is number, x, y : T);
+_ := Vec2(1, 2);     # T == i32
+_ := Vec2(1.0, 2.0); # T == f32
 ```
 
 And follow the same rules as `imp` arguments:
 ```py
-def Vec2 : (T : imp type is number, x, y = f32); # error: 'T' needs to be used in other members
+Vec2 :: (T :: imp type is number, x, y : f32); # error: 'T' needs to be used in other members
 ```
 
 The type of a variable with a constant members is `Struct(<constant-arguments>)`, this is called a 'struct variant':
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(1, 2); # type_of(a) == Vec2(i32)
-def b = Vec2(1.2, 2.1); # type_of(b) == Vec2(f32)
-def c = Vec2(i32) Vec2(3, 4); # Explicitly typed
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(1, 2);          # type_of(a) == Vec2(i32)
+b := Vec2(1.2, 2.1);      # type_of(b) == Vec2(f32)
+c : Vec2(i32) = Vec2(3, 4); # Explicitly typed
 ```
 
-Structs with constant members without the `imp` attribute can't be forward assigned because of this:
+Structs with `imp` constant members cannot have an empty constructor:
 ```py
-def Vec2 : (T : type is number, x, y = T);
-def a = Vec2(i32); # 'a' type is actually being inferred by the initializer 'Vec2(i32)'
-def b = Vec2(i32) Vec2(i32); # equivalent to 'a' but explicitly typed.
-a = Vec2(i32, 1, 2); # error: 'a' is immutable
-```
-
-With the `imp` attribute is fine though:
-```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(i32);
-a = Vec2(1, 2); # valid
-```
-
-Structs with `imp` constant members cannot be empty initialized:
-```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(); # error: 'T' needs to be assigned
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(); # error: 'T' needs to be assigned
 ```
 
 Assign the constant member explicitly if this is desired behaviour:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(.T = i32); # valid
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(.T = i32); # valid
 ```
 
-Or set the variable type explicitly, them the empty initializer will work:
+Or set the variable type explicitly:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(i32) Vec2(); # valid
+Vec2 ::= (T :: imp type is number, x, y : T);
+a : Vec2(i32) = Vec2(); # valid
 ```
 
 It's possible to access constant members:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(1, 2);
-def b = a.T Vec2(); # valid: 
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(1, 2);
+b : a.T = Vec2(); # valid: 
 ```
 
 But is not possible to modify them:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def a = Vec2(1, 2);
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(1, 2);
 a.T = f32; # error: 'T' is a constant
+```
+
+You can also access a constant member from a struct variant:
+```py
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(1, 2);
+b : Vec2(f32).T; # valid, 'b' type is 'f32'
+```
+
+It's possible to call a constructor from a constant argument. Think of the constant argument as simply an alias:
+```py
+Vec2 ::= (T :: imp type is number, x, y : T);
+a := Vec2(Vec2(1, 2), Vec2(3, 4)); # a is of type 'Vec2(Vec2(i32))'
+b := a.T(); # valid, 'b' type is 'Vec2(i32)'
 ```
 
 To pass structs with constant members to functions the struct variant must be explicit:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def vec2_add(a, b = Vec2(i32)) Vec2(i32) => Vec2(a.x+b.x, a.y+b.y);
-def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
-def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # invalid
+Vec2 ::= (T :: imp type is number, x, y : T);
+addv ::= (a, b : Vec2(i32)) Vec2(i32) => Vec2(a.x+b.x, a.y+b.y);
+_ := addv(Vec2(1, 2), Vec2(3, 4)); # valid
+_ := addv(Vec2(1.0, 2.0), Vec2(3.0, 4.0)); # invalid
 ```
 
 If generic behavior is desired use constant arguments:
 ```py
-def Vec2 : (T : imp type is number, x, y = T);
-def vec2_add(T : imp type is number, a, b = Vec2(T)) Vec2(T) => Vec2(a.x+b.x, a.y+b.y);
-def _ = Vec2(1, 2) vec2_add Vec2(3, 4); # valid
-def _ = Vec2(1.2, 2.1) vec2_add Vec2(3.4, 4.3); # valid
+Vec2 ::= (T :: imp type is number, x, y : T);
+addv ::= (T :: imp type is number, a, b : Vec2(T)) Vec2(T) => Vec2(a.x+b.x, a.y+b.y);
+_ := addv(Vec2(1, 2), Vec2(3, 4)); # valid
+_ := addv(Vec2(1.0, 2.0), Vec2(3.0, 4.0)); # valid
 ```
 
 #### Compile-time only structs
 If a struct has only constant members it becomes a compile-time only type:
 ```py
-def Vec2 : (T : imp type is number, a, b : T);
-def a = Vec2(1, 2); # error: 'Vec2' is a compile-time only type and can't be assigned to a variable
+Vec2 ::= (T :: imp type is number, a, b :: T);
+a := Vec2(1, 2); # error: 'Vec2' is a compile-time only type and can't be assigned to a variable
 ```
 
 This is useful for something like this:
 ```py
-def Plugin : (
-  T : imp type,
-  init : fn() T,
-  run : fn(inst = T) void,
+Plugin ::= (
+  T    :: imp type,
+  init :: fn() T,
+  run  :: fn(inst = T) void,
 );
-def load_plugin : (P : Plugin) => {
-  def inst = P.init();
+load_plugin ::= (P :: Plugin) => {
+  inst := P.init();
   P.run(inst);
 }
 ```
 
 ### Static constants
-Member constants are per instance constants and cannot have a default value. Static constants are per struct constant and they need to have a value.
+Constant members are per instance constants and cannot have a default value. Static constants are per struct constants and they need to have a value.
 
 To define a static constant use the following syntax:
 ```py
-def <struct>.<constant-name> : <value>;
+<struct>.<constant-name> :: [type] = <value>;
 ```
 
 This constant can be accessed only via the struct name, not by it's instances:
 ```py
-def Point : (x, y = i32);
-def Point.ONE : Point(1, 1);
-def p0 = Point.ONE; # valid
-def p1 = p0.ONE; # error: 'ONE' is not a member of 'Point'
-```
-
-You can have member constants and variables with the same name as static constants:
-```py
-def Point : (ONE : Point, x, y = i32);
-Point.ONE : Point(Point(1, 1), 1, 1);
-def p0 = Point.ONE; # valid
-def p1 = p0.ONE; # valid
+Point ::= (x, y : i32);
+Point.ONE ::= Point(1, 1);
+p0 := Point.ONE; # valid
+p1 := p0.ONE; # error: 'ONE' is not a member of 'Point'
 ```
 
 You can access static constants via struct variants:
 ```py
-def Vec2 : (T : type is number, x, y = T);
-def Vec2.ONE : Vec2(1, 1);
-def v0 = Vec2(f32).ONE; # in this case a Vec2(i32) is being generated from a Vec2(f32) variant
+Vec2 ::= (T :: type is number, x, y : T);
+Vec2.ONE ::= Vec2(1, 1);
+v0 := Vec2(f32).ONE; # in this case a Vec2(i32) is being generated from a Vec2(f32) variant
 ```
 
-Inside static constant initializers, `()` refers to the current struct variant. Use `().<name>` to access constant member values:
+Inside static constants you can use `~.<constant-member>` to access constant members of the current struct variant:
 ```py
-def Vec2 : (T : type is number, x, y = T);
-def Vec2.ONE : Vec2(1 -> ().T, 1 -> ().T);
-def v0 = Vec2(f32).ONE; # generates an Vec2(f32) with x and y as 1
+Vec2 ::= (T :: type is number, x, y : T);
+Vec2.ONE ::= Vec2(1 -> ~.T, 1 -> ~.T);
+v0 := Vec2(f32).ONE; # generates an Vec2(f32) with x and y as 1
 ```
 
-If a static constant uses `()`, it must be called only from struct variants. Accessing it via the base struct will cause an error:
+If a static constant uses `~.<constant-member>`, it must be called only from struct variants. Accessing it via the base struct will cause an error:
 ```py
-def Vec2 : (T : type is number, x, y = T);
-def Vec2.ONE : Vec2(1 -> ().T, 1 -> ().T);
-def v0 = Vec2.ONE; # error: 'ONE' can only be accessed via 'Vec2' variants
+Vec2 ::= (T :: type is number, x, y : T);
+Vec2.ONE ::= Vec2(1 -> ~.T, 1 -> ~.T);
+v0 := Vec2.ONE; # error: 'ONE' can only be accessed via 'Vec2' variants
 ```
 
-Static variables aren't a thing.
+Struct static variables aren't a thing.
 
 #### Methods
-Methods are static constant functions that accept a, mutable or immutable, pointer, reference, view or direct value to the struct of the static constant itself as it's first variable argument:
+Methods are static constant functions that accept a, mutable or immutable pointer, reference, view or direct value to the struct of the static constant itself as it's first variable argument:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add : (self = Vec2, other = Vec2) => Vec2(self.x+other.x, self.y+other.y);
-def a = Vec2(1, 2);
-def b = Vec2(3, 4);
-def c = Vec2.add(a, b);
+Vec2 ::= (x, y = f32);
+Vec2.add ::= (self : Vec2, other : Vec2) => Vec2(self.x+other.x, self.y+other.y);
+a := Vec2(1, 2);
+b := Vec2(3, 4);
+c := Vec2.add(b);
 ```
 
-Methods are the only static constants that can be accessed via instances. This will actually pass an address of value to the instance as the method first paremeter:
+Methods are the only static constants that can be accessed via instances. This will actually pass the instance as the method first paremeter:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add : (self, other = Vec2) => Vec2(self.x+other.x, self.y+other.y);
-def a = Vec2(1, 2);
-def b = Vec2(3, 4);
-def c = a.add(b); # sugar for Vec2.add(a, b)
+Vec2 ::= (x, y : f32);
+Vec2.add ::= (self : Vec2, other : Vec2) => Vec2(self.x+other.x, self.y+other.y);
+a := Vec2(1, 2);
+b := Vec2(3, 4);
+c := a.add(b); # sugar for Vec2.add(a, b)
+```
+
+If the first argument is a pointer or something like that an implicit address will be taken:
+```py
+Vec2 ::= (x, y : f32);
+Vec2.addeq ::= (self : *mut Vec2, other : Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
+a := Vec2(1, 2);
+b := Vec2(3, 4);
+a.addeq(b); # sugar for Vec2.addeq(&a, b)
 ```
 
 `self` is just an argument so it can use any of the argument definition established previously:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add0 : (self = Vec2, other = Vec2) => ...; # valid
-def Vec2.add1 : (self, other = Vec2) => ...; # valid
+Vec2 ::= (x, y : f32);
+Vec2.add0 : (self : Vec2, other : Vec2) => ...; # valid
+Vec2.add1 : (self, other : Vec2) => ...; # valid
 ```
 
 It's a convention to call the `self` argument as `self`, it actually can be named as anything:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add : (this, other = Vec2) => Vec2(this.x+other.x, this.y+other.y);
+Vec2 ::= (x, y : f32);
+Vec2.add ::= (this, other = Vec2) => Vec2(this.x+other.x, this.y+other.y);
 ```
 
 Methods and static constants as a whole are mainly used on structs, but they actually can be defined for _any_ type:
 ```py
-def i32.square : (self = i32) => self*self;
-def twenty_five = 25.square();
+i32.square ::= (self : i32) => self*self;
+twenty_five := 5.square();
 ```
 
-Infix calls cannot be used on method calls. But if the method takes only one argument besides the `self` argument the one-parameter call convention is possible:
+If the method takes only one argument besides the `self` argument the one-parameter call convention is possible:
 ```py
-def i32.add : (self, other = i32) => self+other;
-def twenty_five = 20.add 5;
+i32.add ::= (self, other : i32) => self+other;
+twenty_five = 20.add 5;
 ```
 
 So this is completely possible with the language rules:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add : (self, other = Vec2) Vec2 => (self.x+other.x, self.y+other.y);
-def _ = Vec2(1.0, 2.0).add(3.0, 4.0);
+Vec2 ::= (x, y : f32);
+Vec2.add ::= (self, other : Vec2) Vec2 => (self.x+other.x, self.y+other.y);
+_ := Vec2(1.0, 2.0).add(3.0, 4.0);
 ```
 
-If a method have the same name as a member constant or variable the member takes priority, so methods have to be called as standard static constant functions:
+If a method have the same name as a constant member or variable the member takes priority, so methods have to be called as standard static constant functions:
 ```py
-def Foo : (x = i32, one = i32 1);
-def Foo.one : (_self = Foo) i32 => 1;
-def a = Foo(.one = 2);
-def one = mut i32;
+Foo ::= (x : i32, one : i32 = 1);
+Foo.one ::= (_self : Foo) i32 => 1;
+a   := Foo(.one = 2);
+one := mut i32;
 one = a.one; # one == 2
 one = Foo.one(a); # one == 1
 ```
 
 Keep in mind that you technically can use [function pointers](#Function-pointers) to have functions directly inside structs:
 ```py
-def Vec2 : (
-  x, y = f32,
-  add = imm &(self, other = Vec2) { # the 'Vec2' in here doesn't count as a recursive variable
-    ret Vec2(self.x+other.x, self.y+other.y);
-  },
+Vec2 ::= (
+  x, y : f32,
+  add : imm *fn(self : Vec2, other : Vec2) Vec2 =
+    &((self, other = Vec2) Vec2 => (self.x+other.x, self.y+other.y)), # the 'Vec2' in here doesn't count as a recursive variable
 )
 ```
 
-This is not recommended if the intention is method behavior because: it'll waste memory, it'll be slower than methods because of function pointer derreferencing, the method-like call will not work and the member it's not garanteed to always have the same beahvior even with `imm`.
+This is not recommended if the intention is method behavior because: it'll waste memory, it'll be slower than methods because of function pointer derreferencing, the method-like call will not work, it's extremely cumbersome to write because members can't have type inference, and the member is not garanteed to always have the same beahvior even with `imm`.
 
 #### Generics and static constants
 When you define a function with a constant argument, what you're actually doing is creating a template. So if you try to access a static constant from a generic type of a function the function will simply assume that the type has the static constant. The same thing applies on method-like call:
 ```py
-def foo : (T : type) u64 => {
-  def a = T.FOO;
-  ret something() * T.FOO; # because of the usage 'T.FOO' is implied to u64, same thing for 'a' 
+foo ::= (T :: type) u64 => {
+  a := T.FOO;
+  ret something() * T.FOO; # because of the usage 'T.FOO' is implied to be passable to an u64 
 };
-def bar : (T : imp type, a = T) => {
-  a.something(T.FOO); # 'T.something' is expected to be able to receive 'T.FOO' as it's first argument
+bar ::= (T :: imp type, a : T) => {
+  a.something(T.FOO); # 'T.something' method is expected to be able to receive 'T.FOO' as it's first argument
 };
-def Foo : (a, b = i32);
-def Foo.FOO : 1;
-def Foo.something : (x = i32) => ...;
-def _  = foo(Foo); # valid
-def _  = foo(i32); # error: i32 doesn't have static constant 'FOO'
+Foo     ::= (a, b : i32);
+Foo.FOO ::= 1;
+Foo.something ::= (x : i32) => ...;
+_ := foo(Foo); # valid
+_ := foo(i32); # error: i32 doesn't have static constant 'FOO'
 bar(Foo(1, 2)); # valid
 bar(1); # error: i32 doesn't have static constant 'FOO' nor 'something'
 ```
@@ -2095,53 +2524,49 @@ bar(1); # error: i32 doesn't have static constant 'FOO' nor 'something'
 So functions with generic types actually are duck typed at compile-time.
 
 ### 'take' attribute
-There are times when you want to treat the members of a struct type member as its own. Use the `take` attribute for that:
+There are times when you want to access the members of a member struct directly from the base struct. Use the `take` modifier for that:
 ```py
-def Vec2 : (x, y = f32);
-def Entity : (
-  position = take Vec2,
-  id = u32,
+Vec2 ::= (x, y : f32);
+Entity ::= (
+  position : take Vec2,
+  id : u32,
 );
-```
-
-Then the members of the member type itself can be accessed by the base struct:
-```py
-def ent = mut Entity();
+ent : mut Entity;
 ent.x = 10; # valid, same as 'ent.position.x = 10'
 ```
 
-If member names conflict the own struct member takes priority:
+If member names conflict between a base member and a member of a struct member, the base member takes priority:
 ```py
-def Vec2 : (x, y = f32);
-def Entity : (
-  position = take Vec2,
-  x = u32,
-  id = u32,
+Vec2 ::= (x, y : f32);
+Entity ::= (
+  position : take Vec2,
+  x : u32,
+  id : u32,
 );
-def ent = mut Entity();
+ent : mut Entity;
 ent.x = 10; # this modifies the 'Entity' 'x' not the position 'x'
 ```
 
-If conflict between two takes arrises you simply can't use the shortcut:
+If conflict between two `take` members arrises you simply can't use the shortcut:
 ```py
-def Vec2 : (x, y = f32);
-def Entity : (
-  position = take Vec2,
-  velocity = take Vec2,
-  id = u32,
+Vec2 ::= (x, y : f32);
+Entity ::= (
+  position : take Vec2,
+  velocity : take Vec2,
+  id : u32,
 );
-def ent = mut Entity();
-ent.x = 10; # error: 'x' conflicting 'take' members
+ent : mut Entity;
+ent.x = 10; # error: ambiguous 'x' between 'position' and 'velocity' members
 ```
 
 Methods from a `take` member have to be called through the member directly:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add_eq : (self = *mut Vec2, other = Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
-def Entity : (position = take Vec2, id = u32);
-def ent = mut Entity();
-ent.position.add_eq(Vec2(1, 2, 3)); # valid
-ent.add_eq(Vec2(1, 2, 3)); # error: 'add_eq' isn't a static function for the type 'Entity'
+Vec2 ::= (x, y : f32);
+Vec2.addeq ::= (self : *mut Vec2, other : Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
+Entity ::= (position : take Vec2, id : u32);
+ent : mut Entity;
+ent.position.addeq(Vec2(1, 2, 3)); # valid
+ent.addeq(Vec2(1, 2, 3)); # error: 'add_eq' isn't a static function for the type 'Entity'
 ```
 
 `take` also works with [unions](#Unions) and basically any type with members.
@@ -2151,7 +2576,7 @@ Most languages have the Array of Structures layout as the default way to store b
 
 With the AoS layout a struct that looks like this:
 ```py
-def Foo : (x, y, z = i32);
+Foo ::= (x, y, z : i32);
 ```
 
 Would have this layout on arrays and other sort of buffers:
@@ -2177,8 +2602,6 @@ The most efficient way of storing that is actually multiple arrays for each memb
 ```
 
 In other languages achieving this kind of layout can be quite cumbersome to create and handle, an example in C would be:
-
-This would translate to this C code:
 ```c
 #define FOO_BUFF_LEN 100 
 typedef struct {
@@ -2192,10 +2615,10 @@ for (int i = 0; i < FOO_BUFF_LEN; i++) {
 }
 ```
 
-In stark when creating an array of some struct you can use the `soa` attribute, that way this layout is achieve automatically:
+In Stark when creating an array of some struct you can use the `soa` modifier, that way this layout is achieve automatically:
 ```py
-def Foo : (x, y, z = i32);
-def foo_buf = soa [3]Foo;
+Foo ::= (x, y, z : i32);
+foo_buf : soa [100]Foo;
 for i in 0..@len(foo_buf) => foo_buf[i].x = i;
 ```
 
@@ -2203,9 +2626,9 @@ That way structure of arrays are handled in a extremely similar way to the famil
 
 Nested structures will also follow the SoA layout. This:
 ```py
-def Vec2 : (x, y = f32);
-def Entity : (position = Vec2, id = u32);
-def ent_buf = soa [3]Foo;
+Vec2   ::= (x, y : f32);
+Entity ::= (position : Vec2, id : u32);
+ent_buf : soa [100]Entity;
 for i in 0..@len(ent_buf) => ent_buf[i].position.x = i;
 ```
 
@@ -2223,11 +2646,11 @@ for (int i = 0; i < ENT_BUFF_LEN; i++) {
 }
 ```
 
-If a member struct is not supposed to unroll like this add the `crate` attribute to it:
+If a member struct is not supposed to unroll like this add the `crate` modifier to it:
 ```py
-def Vec2 : (x, y = f32);
-def Entity : (position = crate Vec2, id = u32);
-def ent_buf = soa [3]Foo;
+Vec2   ::= (x, y : f32);
+Entity ::= (position : crate Vec2, id : u32);
+ent_buf : soa [100]Foo;
 for i in 0..@len(ent_buf) => ent_buf[i].position.x = i;
 ```
 
@@ -2245,55 +2668,91 @@ for (int i = 0; i < ENT_BUFF_LEN; i++) {
 }
 ```
 
-#### Views
-There is some pitfalls for using SoA over AoS, the major one is passing pointers to individual elements of the array. This is actually not possible in stark:
+Keep in mind that `soa` arrays are a different type than normal arrays. You can't pass them to normal functions:
 ```py
-def Foo : (x, y, z = i32);
-def foo_buf = soa [100]Foo;
-def ptr_to_some_foo = &foo_buf[0]; # error: taking address of soa buffer element
+Vec2 ::= (x, y : f32);
+do_stuff ::= (N :: imp usize, v : [N]Vec2) => ...;
+buf : soa [100]Foo;
+do_stuff(buf); # error: expected '[100]Foo' got 'soa [100]Foo'
 ```
 
-If this is inteded behavior what you really want is a view, not a pointer. Views are a collection of pointers into a SoA buffer, to take a view of a struct element use the `[&]` operator:
+#### SoA slices
+You can take a slice from an `soa` array:
 ```py
-def Foo : (x, y, z = i32);
-def foo_buf = soa [100]Foo;
-def view_to_some_foo = [&]foo_buf[0]; # valid
+Vec2 ::= (x, y : f32);
+buf : soa [100]Foo;
+slice := buf[..];
+```
+
+The type of an `soa` array slice is `soa [..]T`:
+```py
+Vec2 ::= (x, y : f32);
+buf : soa [100]Foo;
+slice : soa [..]Foo = buf[..];
+```
+
+And `soa` slices are also a different type from normal slices:
+```py
+Vec2 ::= (x, y : f32);
+do_stuff ::= (v : [..]Vec2) => ...;
+buf : soa [100]Foo;
+do_stuff(buf); # error: expected '[..]Foo' got 'soa [..]Foo'
+```
+
+#### Views
+There is some pitfalls for using SoA over AoS, the major one is passing pointers to individual elements of the array. This is actually not possible in Stark:
+```py
+Foo ::= (x, y, z : i32);
+foo_buf : soa [100]Foo;
+ptr_to_some_foo := &foo_buf[0]; # error: taking address of soa buffer element
+```
+
+If this is inteded behavior what you really want is a view, not a pointer. Views are a collection of pointers into an SoA buffer, to take a view of a struct element use the `[&]` operator:
+```py
+Foo ::= (x, y, z : i32);
+foo_buf : soa [100]Foo;
+view_to_some_foo := [&]foo_buf[0]; # valid
 ```
 
 The "all values are immutable by default" rule applies to views, use `[&]mut` to take a mutable view:
 ```py
-def Foo : (x, y, z = i32);
-def foo_buf = [100]Foo;
-def view_to_some_foo = [&]mut foo_buf[0];
+Foo ::= (x, y, z : i32);
+foo_buf : mut soa [100]Foo;
+view_to_some_foo := [&]mut foo_buf[0];
 view_to_some_foo.x = 10; # foo_buf[0].x == 10
 ```
 
-The type of a view is `[*]` for immutable and `[*]mut` for mutable followed by the type that the view views into:
+The type of a view is `[*]T` for immutable and `[*]mut T` for mutable:
 ```py
-def view0 = [*]Foo [&]foo_buf[0];
-def view1 = [*]mut Foo [&]mut foo_buf[0];
+view0 : [*]Foo     = [&]foo_buf[0];
+view1 : [*]mut Foo = [&]mut foo_buf[0];
 ```
 
 It's possible to derreference a view:
 ```py
-def view = [*]Foo [&]foo_buf[0];
+view := [&]mut foo_buf[0];
 *view = Foo(1, 2, 3);
+foo := *view; # 'foo' is of type 'Foo'
 ```
 
 Keep in mind that SoA elements can't use the [arguments as references rule](#Immutable-arguments-are-references) for optimization. The values will have to be copied.
 
 It is also only possible to use methods from SoA elements that receive a view or a value:
 ```py
-def Vec2 : (x, y = f32);
-def Vec2.add : (self = Vec2, other = Vec2) Vec2 => Vec2(self.x+other.x, self.y+other.y);
-def Vec2.add_eq_view : (self = [*]mut Vec2, other = Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
-def Vec2.add_eq_ptr : (self = *mut Vec2, other = Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
-def Entity : (position = Vec2, id = u32);
-def ent = mut soa [10]Entity;
-def new_pos = ent[0].position.add(Vec2(1, 2, 3)); # valid
-ent[0].position.add_eq_view(new_pos); # valid
-ent[0].position.add_eq_ptr(new_pos); # error: 'ent[0]' can't be passed as a pointer
+Vec2             ::= (x, y : f32);
+Vec2.add         ::= (self = Vec2, other : Vec2) Vec2 => Vec2(self.x+other.x, self.y+other.y);
+Vec2.add_eq_view ::= (self : [*]mut Vec2, other : Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
+Vec2.add_eq_ptr  ::= (self : *mut Vec2, other : Vec2) => *self = Vec2(self.x+other.x, self.y+other.y);
+Entity           ::= (position : Vec2, id : u32);
+ent : mut soa [10]Entity;
+new_pos := ent[0].position.add Vec2(1, 2, 3); # valid
+ent[0].position.add_eq_view new_pos; # valid
+ent[0].position.add_eq_ptr new_pos; # error: 'ent[0]' can't be passed as a pointer
 ```
+
+### Struct padding
+NOTE: here
+All types have an alignment
 
 ### Packed structs
 Structs have padding between members if necessary. This is done for optimization reasons, but if a struct has to be packed without padding add `pack` as prefix in the struct definition:
@@ -2696,39 +3155,44 @@ def b = a -> i32 -> u8; # 'b' is an i8 with value 1
 ### Pointer casting
 The `->` operator can also be used on pointers:
 ```py
-def a = i32;
-def p0 = &a;
-def p1 = p0 -> *i8; # p1 points to 'a' as if it was a '*i8'
+a  := i32;
+p0 := &a;
+p1 := p0 -> *i8; # p1 points to 'a' as if it was a '*i8'
 ```
 
 It's not possible to cast an immutable pointer into a mutable one:
 ```py
-def a = i32;
-def p0 = &a;
-def p1 = p0 -> *mut i8; # error
+a  := i32;
+p0 := &a;
+p1 := p0 -> *mut i8; # error
+```
+
+But the opposite is fine:
+```py
+a  := mut i32;
+p0 := &mut a;
+p1 := p0 -> *i8; # valid
 ```
 
 Casting between pointers and integers is possible:
 ```py
-def a = i32;
-def p0 = &a;
-def i0 = p0 -> u64; # valid
-def i1 = p0 -> isize; # valid
-def i2 = p0 -> i8; # valid
-def p1 = i0 -> *i32; # valid
+a  := i32;
+p0 := &a;
+i0 := p0 -> u64; # valid
+i1 := p0 -> isize; # valid
+i2 := p0 -> i8; # valid
+p1 := i0 -> *i32; # valid
 ```
 
 Keep in mind that casting between pointers, and specially pointer-integer casting, can be extremely unsafe:
 ```py
-def a = 0xdeadbeef;
-def p1 = i0 -> *i32;
-def b = *p1; # program will crash
+p := 0xdeadbeef -> *i32;
+a := *p; # program will crash
 ```
 
 It's not possible to cast an integer into a mutable pointer:
 ```py
-def a = 0xdeadbeef;
-def p1 = i0 -> *mut i32; # error
+p := 0xdeadbeef -> *mut i32; # error
 ```
 
 ### String casting
@@ -2775,6 +3239,26 @@ def pos = Vec2(1.0, 2.0, 3.0);
 def col = pos -> Color; # valid
 ```
 
+### Function casting
+If two functions have the same fundamental structure (same number of arguments, each with the same type and same return type) but only the parameter names differ casting is possible:
+```py
+square0 ::= (x : i32) i32 => x*x
+square1 :: fn(a : i32) i32 = square0 -> fn(a : i32) i32; # valid
+sum :: fn(x : i32, y : i32) i32 = square0 -> fn(x : i32, y : i32) i32; # error: functions differ in layout
+```
+
+The same thing works for function pointers:
+```py
+square0 := &(x : i32) i32 => x*x
+square1 : *fn(a : i32) i32 = square0 -> *fn(a : i32) i32; # valid
+```
+
+Because function pointers are pointers, the casting rules for them are the same as the pointers one:
+```py
+square0 := &(x : i32) i32 => x*x
+square1 : *fn(a : i32, b : i32) i32 = square0 -> *fn(a : i32, b : i32) i32; # valid
+```
+
 ### Auto casting
 Sometimes you don't want to explicitly cast to a type. Use the `!` operator as an automatic `-> type` cast to the expected type:
 ```py
@@ -2806,6 +3290,12 @@ def div : (a, b = i32) (bool, i32) => b == 0 ? (false, 0) : (true, a/b);
 def Result : (bool, i32);
 def res = Result div(4, 2); # error: types differ
 def res = Result div(4, 2)!; # valid
+```
+
+Auto casting between functions works as well (not function pointers):
+```py
+sum0 ::= (x : i32) i32 => x*x
+sum1 :: fn(a : i32) i32 = sum0!; # valid
 ```
 
 ### Invalid casting
@@ -3107,36 +3597,36 @@ So the ternary operator is in reality just sugar for `if`/`else`.
 As it's known, [variable assignments](#Variable-assignment) wrapped around parenthesis return the variable value after it's assignment. This becomes really useful on if expressions:
 ```py
 def x = mut i32;
-if (x = get_x()) == 10 => do_stuff();
+if |x = get_x()| == 10 => do_stuff();
 ```
 
 #### 'if def'
-It's very commom to do an operation put the result in a variable and only use said variable if it's in certain coditions. Use an `if def` to make the variable be visible only on the `if`/`else` chain. The assignment rule is still applicable, so it's needed to wrap it around parenthesis:
+It's very commom to do an operation put the result in a variable and only use said variable if it's in certain coditions. Use an `if def` to make the variable be visible only on the `if`/`else` chain. The assignment rule is still applicable, so it's needed to wrap it around pipes:
 ```py
-if def (x = i32 get()) == 10 && x < 10 => ...;
+if def |x = i32 get()| == 10 && x < 10 => ...;
 else x == 9                            => ...;
 
-if def (x = bool get()) => ...;
+if def |x = bool get()| => ...;
 else                    => ...;
 ```
 
 You can also use `def` on `else`s with conditions:
 ```py
 if something => ...;
-else def (x = get_something()) == 10 => ...;
+else def |x = get_something()| == 10 => ...;
 else x == 9 => ...; # 'x' now becomes avaiable for subsequent elses
 ```
 
 Shadowing in `if`/`else` with `def` isn't allowed:
 ```py
-if   def (x = get_this()) == 10 => ...;
-else def (x = get_that()) == 9  => ...; # error: 'x' is already defined
+if   def |x = get_this()| == 10 => ...;
+else def |x = get_that()| == 9  => ...; # error: 'x' is already defined
 ```
 
 Do an assignment without `def` if this is needed:
 ```py
-if def (x = get_this()) == 10 => ...;
-else   (x = get_that()) == 9  => ...; # valid
+if def |x = get_this()| == 10 => ...;
+else   |x = get_that()| == 9  => ...; # valid
 ```
 
 ### Switch expression
@@ -3212,7 +3702,7 @@ switch col (
 #### 'switch def'
 Similarly to the `if def`, switches can also have a `switch def` and it works the same way:
 ```py
-switch def (x = get_i32()) (
+switch def |x = get_i32()| (
   0 => do_this_with_x(x);
   1 => do_that_with_x(x);
 );
@@ -3227,14 +3717,14 @@ while something => something = get_something();
 
 Following the `switch` and `if`, `while` expression can also have `def`. This way they work like C for loops:
 ```py
-while def (i = 0) < 10 => i++;
+while def |i = 0| < 10 => i++;
 ```
 
-The definition will only occur once, on next iterations only the current value of `i` will be used.
+The definition and assignment will only occur once, on next iterations only the current value of `i` will be used.
 
 You can use the `nxt` expression to go to the next iteration immediately: 
 ```py
-while def (i = 0) < 10 => {
+while def |i = 0| < 10 => {
   i++;
   if i % 2 == 0 => nxt;
   do_something();
@@ -3248,7 +3738,7 @@ while something => nxt; # error: 'nxt' outside of expression-block
 
 Because `nxt` just jumps to the end of the expression block, all deferred expressions will be ran. So the correct way to do a C for loop is:
 ```py
-while def (i = 0) < 10 => {
+while def |i = 0| < 10 => {
   defer i++;
   if i % 2 == 0 => nxt;
   do_something();
@@ -3257,7 +3747,7 @@ while def (i = 0) < 10 => {
 
 `nxt` accepts an expression that will be ran at the next loop iteration:
 ```py
-while def (i = 0) < 10 => {
+while def |i = 0| < 10 => {
   defer i++;
   if i % 2 == 0 => nxt i++; # i will incremeant by 1 in the next iteration
   do_something();
@@ -3266,7 +3756,7 @@ while def (i = 0) < 10 => {
 
 Because `nxt` is an expression it can be nested:
 ```py
-while def (i = 0) < 10 => {
+while def |i = 0| < 10 => {
   defer i++;
   if i % 2 == 0 => nxt nxt; # skips next iteration
   do_something();
@@ -3412,7 +3902,7 @@ else => ...;
 @for i in 0..9 => ...;
 ```
 
-And all of them can be ran in [module-scope](#Module-scope).
+And all of them can be ran in [module-scope](#Scoping).
 
 All compile-time loops are unrolled. And all false `if`/`else`/`switch` conditions aren't included on the final code. They're still checked for errors though.
 
@@ -3636,38 +4126,40 @@ def some_overload : [](_+) +||+;
 #### Type patterns
 A type pattern determines a pattern that can be used on variable argument or return type. The type pattern is defined in a very similar way to a [variable](#Variable-definitions), but it can't have a value. You can put any type or class on a type pattern, the `_` identifier (that would mean any type) or a previously defined type pattern.
 ```py
-def some_overload : [a = _, b = u32, c = a](a, b) c||+;
+some_overload ::= [a = _, b = u32, c = a](a, b) c||+;
 ```
 
 The type pattern represents a type, it can also be a pointer, slice, view or array (the array length needs to be a constant integer or `_`):
 ```py
-def some_overload : [
+some_overload ::= [
   a = *_,
   b = **_,
-  c = *mut _,
-  d = [3]_,
-  e = [_]_,
-  f = [..]_,
-  g = [..]mut _,
-  h = [*]_,
-  i = [*]mut _
-](a, b, c, d, e, f, g, h) i||+;
+  c = &*_,
+  d = *mut _,
+  e = [3]_,
+  f = [_]_,
+  g = [..]_,
+  h = [..]mut _,
+  i = [*]_,
+  j = [*]mut _
+](a, b, c, d, e, f, g, h, i) j||+;
 ```
 This isn't all the possible combinations, because the possible combinations are infinite, like on variables where you can have a pointer to a slice of arrays of length 3 of mutable views to some type.
 
 This isn't exclusive to the `_` identifier. These type attributes can be used on previously defined type patterns or real external types:
 ```py
-def some_overload : [
+some_overload ::= [
   a = *u32,
   b = **a,
-  c = *mut b,
-  d = [3]i32,
-  e = [_]d,
-  f = [..]f,
-  g = [..]mut f32,
-  h = [*]number,
-  i = [*]mut h
-](a, b, c, d, e, f, g, h) i;
+  c = &*b,
+  d = *mut b,
+  e = [3]i32,
+  f = [_]d,
+  g = [..]f,
+  h = [..]mut f32,
+  i = [*]number,
+  j = [*]mut h
+](a, b, c, d, e, f, g, h, i) j;
 ```
 
 If a type pattern name collides with an external type, the type pattern takes priority:
@@ -3869,26 +4361,26 @@ def __sub__ : [a = _](a, a) a||+; # minus '-'
 def __mul__ : [a = _](a, a) a||+; # multiplication '*'
 def __div__ : [a = _](a, a) a||+; # division '/'
 def __mod__ : [a = _](a, a) a||+; # modular '%'
-def __addeq__ : [a = _, b = *_](b, a) void||+; # plus equals '+=', returns void
-def __subeq__ : [a = _, b = *_](b, a) void||+; # minus equals '-=', returns void
-def __muleq__ : [a = _, b = *_](b, a) void||+; # multiplication equals '*=', returns void
-def __diveq__ : [a = _, b = *_](b, a) void||+; # division equals '/=', returns void
-def __modeq__ : [a = _, b = *_](b, a) void||+; # modular equals '%=', returns void
-def __addeqe__ : [a = _, b = *_](b, a) a||+; # plus equals '+=', returns expression value
-def __subeqe__ : [a = _, b = *_](b, a) a||+; # minus equals '-=', returns expression value
-def __muleqe__ : [a = _, b = *_](b, a) a||+; # multiplication equals '*=', returns expression value
-def __diveqe__ : [a = _, b = *_](b, a) a||+; # division equals '/=', returns expression value
-def __modeqe__ : [a = _, b = *_](b, a) a||+; # modular equals '%=', returns expression value
-def __incp__ : [a = *mut _](a) void||+; # prefix increment '++', returns void
-def __decp__ : [a = *mut _](a) void||+; # prefix decrement '--', returns void
-def __incs__ : [a = *mut _](a) void||+; # suffix increment '++', returns void
-def __decs__ : [a = *mut _](a) void||+; # suffix decrement '--', returns void
-def __incpe__ : [a = *mut _](a) a||+; # prefix increment '++', returns expression value
-def __decpe__ : [a = *mut _](a) a||+; # prefix decrement '--', returns expression value
-def __incse__ : [a = *mut _](a) a||+; # suffix increment '++', returns expression value
-def __decse__ : [a = *mut _](a) a||+; # suffix decrement '--', returns expression value
-def __indg__ : [a = _, b = _, c = *_](c, b) a||+; # index get []
-def __inds__ : [a = *mut _, b = _](a, b) a||+; # index set []
+def __addeq__ : [a = _, b = &*_](b, a) void||+; # plus equals '+=', returns void
+def __subeq__ : [a = _, b = &*_](b, a) void||+; # minus equals '-=', returns void
+def __muleq__ : [a = _, b = &*_](b, a) void||+; # multiplication equals '*=', returns void
+def __diveq__ : [a = _, b = &*_](b, a) void||+; # division equals '/=', returns void
+def __modeq__ : [a = _, b = &*_](b, a) void||+; # modular equals '%=', returns void
+def __addeqe__ : [a = _, b = &*_](b, a) a||+; # plus equals '+=', returns expression value
+def __subeqe__ : [a = _, b = &*_](b, a) a||+; # minus equals '-=', returns expression value
+def __muleqe__ : [a = _, b = &*_](b, a) a||+; # multiplication equals '*=', returns expression value
+def __diveqe__ : [a = _, b = &*_](b, a) a||+; # division equals '/=', returns expression value
+def __modeqe__ : [a = _, b = &*_](b, a) a||+; # modular equals '%=', returns expression value
+def __incp__ : [a = &*mut _](a) void||+; # prefix increment '++', returns void
+def __decp__ : [a = &*mut _](a) void||+; # prefix decrement '--', returns void
+def __incs__ : [a = &*mut _](a) void||+; # suffix increment '++', returns void
+def __decs__ : [a = &*mut _](a) void||+; # suffix decrement '--', returns void
+def __incpe__ : [a = &*mut _](a) a||+; # prefix increment '++', returns expression value
+def __decpe__ : [a = &*mut _](a) a||+; # prefix decrement '--', returns expression value
+def __incse__ : [a = &*mut _](a) a||+; # suffix increment '++', returns expression value
+def __decse__ : [a = &*mut _](a) a||+; # suffix decrement '--', returns expression value
+def __indg__ : [a = _, b = _, c = &*_](c, b) a||+; # index get []
+def __inds__ : [a = &*mut _, b = _](a, b) a||+; # index set []
 ```
 
 The operators that can be overloaded are limited to mathematical operations or data structure indexing. Do not abuse this feature.
@@ -4066,30 +4558,30 @@ There are several builtin classes:
 Some of them are updated when custom types are added. Like `struct`, `union`, `any`, etc.
 
 ## Spaces
-Spaces are a subset of the current [module](#Modules) into one common constant. Everything that's valid on the outside module is valid inside of a space. To define a space simply use curly brackets, everything inside it is part of the space:
+Spaces are a subset of the current [module](#Modules) into one common constant. Everything that's valid on the outside module is valid inside of a space. To define a space simply use triangular brackets, everything inside it is part of the space:
 ```py
-def some_space : {
+def some_space : <
   def sum : (x, y = i32) i32 => x+y;
   def sub : (x, y = i32) i32 => x-y;
-};
+>;
 ```
 
 To access a symbol from a space use the `<space>.<symbol>` syntax:
 ```py
-some_space : {
+some_space : <
   def sum : (x, y = i32) i32 => x+y;
   def sub : (x, y = i32) i32 => x-y;
-};
+>;
 def _ = some_space.sum(1, 2);
 ```
 
 ### Space privacy
 Everything inside of a space is public by default, so the `pub` attribute doesn't really do anything. But you can mark them as `prv` to be only accessable inside the space itself:
 ```py
-def some_space : {
+def some_space : <
   prv def mul : (x, y = f32) f32 => x+y;
   pub def dot : (x0,y0, x1,y1 = f32) f32 => x0 mul x1 + y0 mul y1; # 'pub' isn't really needed
-};
+>;
 def _ = some_space.dot(1.0, 2.0, 3.0, 4.0);
 def _ = some_space.mul(1.0, 2.0); # error: 'mul' is private
 ```
@@ -4097,29 +4589,29 @@ def _ = some_space.mul(1.0, 2.0); # error: 'mul' is private
 ### Space type
 All spaces have the type `spc`, so you can define them explicitly:
 ```py
-def some_space : spc {
+def some_space : spc <
   def foo : () =>;
   def bar : () =>;
-};
+>;
 ```
 
 ### The 'use' overload
 There's a bultin overload called `use`, it has two functions by default in it:
 ```py
 def use : [a = spc, b = [..]meta.iden, c = meta](a, b+) c||void (
-  (space = spc) meta =>...,
-  (space = spc, symbols = [..]meta.iden) meta =>...,
+  @(space = spc) meta =>...,
+  @(space = spc, symbols = [..]meta.iden) meta =>...,
 );
 ```
 
 The function that just takes a space will make binds for all the spaces symbols:
 ```py
-def some_space : {
+def some_space : <
   def add : (x, y = i32) i32 => x+y;
   def sub : (x, y = i32) i32 => x-y;
   def mul : (x, y = i32) i32 => x*y;
   def div : (x, y = i32) i32 => x/y;
-};
+>;
 @use some_space;
 ```
 
@@ -4133,12 +4625,12 @@ def div : some_space.div;
 
 And the function that takes a space and a slice of identifiers will make a bind only for those specific identifiers:
 ```py
-def some_space : {
+def some_space : <
   def add : (x, y = i32) i32 => x+y;
   def sub : (x, y = i32) i32 => x-y;
   def mul : (x, y = i32) i32 => x*y;
   def div : (x, y = i32) i32 => x/y;
-};
+>;
 @use(some_space, [add, div]);
 ```
 
@@ -4150,12 +4642,12 @@ def div : some_space.div;
 
 If `@use` finds a conflict between the binding is trying to make and an already defined symbol it asserts:
 ```py
-def some_space : {
+def some_space : <
   def add : (x, y = i32) i32 => x+y;
   def sub : (x, y = i32) i32 => x-y;
   def mul : (x, y = i32) i32 => x*y;
   def div : (x, y = i32) i32 => x/y;
-};
+>;
 def add : some_space.add;
 @use some_space; # error: 'add' is already defined
 ```
@@ -4205,12 +4697,12 @@ def a = mod.add(1, 2); # a == 3
 
 What this function actually do is create a space with bindings to all public symbols of a module. So the `def mod : @import "mod"` above actualy translates to this:
 ```py
-def mod : {
+def mod : <
   def add : ext mod.add;
   def sub : ext mod.sub;
   def mul : ext mod.mul;
   def div : ext mod.div;
-};
+>;
 def a = mod.add(1, 2); # a == 3
 ```
 
@@ -4296,12 +4788,12 @@ def math : @include "math";
 
 This will literaly translate to:
 ```py
-def math : {
+def math : <
   def add : (x, y = i32) i32 => x+y;
   def sub : (x, y = i32) i32 => x-y;
   def mul : (x, y = i32) i32 => x*y;
   def div : (x, y = i32) i32 => x/y;
-};
+>;
 ```
 
 The reason why `.sks` is used for the extension of those separate space files is to avoid confusion. There's one key difference between a space and a module and that is their default privace: All modules have their symbols as private by default and all spaces have their symbols as public by default.
@@ -4335,6 +4827,33 @@ The linker will automaticaly link to every library specified by every `unk`.
 
 The linking path will be specified by the linker. But you can also create a directory named `unk`, that path will be automatically added by the linker. 
 
+## Scoping
+There are two types of scopes in stark source code module-scope and block-scope.
+
+Module-scope is at the file level:
+```py
+CONSTANT_AT_MODULE_SCOPE ::= 10;
+variable_at_module_scope := 10;
+main ::= () =>;
+```
+
+And block-scope is at the function level:
+```py
+main ::= () => {
+  CONSTANT_AT_BLOCK_SCOPE ::= 10;
+  variable_at_block_scope := 10;
+};
+```
+
+Scopes can be nested:
+```py
+{ } # nested module-scope using expression-block
+
+main :: () => {
+  { } # nested block-scope using expression-block
+};
+```
+
 ## Machine code capabilities in Stark
 It's possible to embed binary data directly into stark code using the `embed` expression. This expression takes flags for the embedded data permission and a constant slice of `u8`s. It'll return a `*void` or a `*mut void` depending on the flags: 
 `def data : embed rw [0x86, 0xff]`;
@@ -4360,7 +4879,7 @@ def x = add(3, 4); # x == 7
 ```
 
 ### The bultin 'asm' function
-There's a function on the `std.base` module called `asm`, this function takes intel assembly source code and returns a pointer to the assembly data. It internally uses `embed` with the flag `x`. The valid assembly source will depend on the current platform (x86, x64, etc):
+There's a function on the `std.base` module called `asm`, this function takes intel assembly source code and returns a pointer to the assembly data. It internally uses `embed` with the flag `rxx`. The valid assembly source will depend on the current platform (x86, x64, etc):
 ```py
 def add : @asm $end
   lea rax, [rdi+rsi]

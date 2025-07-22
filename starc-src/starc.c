@@ -101,7 +101,7 @@ void *
 tape_make(u64 type_size, u64 capacity) {
   struct tape_header *h;
   if (type_size == 0) type_size = 1;
-  if (capacity == 0) capacity = 1ul << 32; /* 4GiB of default capacity, practically infinite */
+  capacity = capacity ? capacity * type_size : 1ul << 32; /* 4GiB of default capacity, practically infinite */
   h = mmap(0, sizeof (struct tape_header) + capacity, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
   if (h == MAP_FAILED) return 0;
   h->len = 0;
@@ -211,19 +211,22 @@ string_print(const struct string *s) {
   return !is_neg(write(STDOUT, s->buf, s->len));
 }
 
-u64
+struct stu64_result { u64 val, err; }
 string_to_u64(const struct string *s) {
-  u64 res, prv, i, invalid;
-  if (!s || !s->buf || !s->len) return 0;
-  res = 0;
+  u64 prv, i, invalid;
+  struct stu64_result res;
+  res.err = true;
+  if (!s || !s->buf || !s->len) return res;
+  res.val = 0;
   prv = 0;
   invalid = 0; 
   for (i = 0; i < s->len; i++) {
-    prv = res;
-    res = res * 10 + (s->buf[i] - '0');
-    invalid |= s->buf[i] < '0' || s->buf[i] > '9' || res < prv;
+    prv = res.val;
+    res.val = res.val * 10 + (s->buf[i] - '0');
+    invalid |= s->buf[i] < '0' || s->buf[i] > '9' || res.val < prv;
   }
-  return !invalid * res;
+  res.err = invalid > 0;
+  return res;
 }
 
 /* string builder */
@@ -514,9 +517,9 @@ source_get_position(const struct source *src, u64 index) {
   return pos;
 }
 
-u64
+void
 source_error_location_to_io(struct source *src, struct source_position *pos) {
-  if (!src || !src->file_path.buf || !pos) return false;
+  if (!src || !src->file_path.buf || !pos) return;
   io_set_bold_white();
   io_append(&src->file_path);
   io_append_char(':');
@@ -527,16 +530,15 @@ source_error_location_to_io(struct source *src, struct source_position *pos) {
   io_set_bold_red();
   io_append_cstr(" error: ");
   io_reset();
-  return true;
 }
 
-u64
-source_invalid_to_io(struct source *src, u64 index, u64 len) {
+void
+source_error_code_snippet_to_io(struct source *src, u64 index, u64 len) {
   struct source_line line; 
   struct string line_str;
   u64 idx_on_line;
   u64 i, line_number_digits;
-  if (!src || !src->data.buf || index + len > src->data.len) return false;
+  if (!src || !src->data.buf || index + len > src->data.len) return;
   line = source_get_line(src, index);
   idx_on_line = index - line.index;
   io_append_cstr("  ");
@@ -569,7 +571,6 @@ source_invalid_to_io(struct source *src, u64 index, u64 len) {
   }
   io_reset();
   io_append_char('\n');
-  return true;
 }
 
 /* lexer */
@@ -622,6 +623,12 @@ enum lexer_state {
   LEXER_COMMENT
 };
 
+struct lexer {
+  struct token *tokens;
+  struct source *src;
+  u64 pos;
+};
+
 static u64
 is_delimiter(char c) {
   return c == ' ' || c == '\t' || c == '\n';
@@ -651,21 +658,21 @@ token_type_from_identifier(const struct string *tok_data) {
 #undef RETURN_KEYWORD
 
 #define NEW_TOKEN(tok_type) do { \
-  tok = tape_push(tokens, struct token); \
+  tok = tape_push(lexer.tokens, struct token); \
   assert(tok != 0, "exceeded maximum token capacity"); \
   tok->type = tok_type; \
   tok->data = tok_data; \
 } while (0)
 
-struct token *
-source_to_tokens(struct source *src) {
+struct lexer
+source_to_lexer(struct source *src) {
   char c;
   enum lexer_state state;
   struct string tok_data;
+  struct lexer lexer;
   struct token *tok;
-  struct token *tokens;
-  tokens = tape_make(sizeof (struct token), 0);
-  assert(tokens != 0, "couldn't make tokens buffer");
+  lexer.tokens = tape_make(sizeof (struct token), 0);
+  assert(lexer.tokens != 0, "couldn't make tokens buffer");
   state = LEXER_NORMAL;
   while ((c = source_chop(src))) {
     switch (state) {
@@ -715,13 +722,13 @@ source_to_tokens(struct source *src) {
             struct source_position pos = source_get_position(src, symbol_index);
             io.fd = STDERR;
             io_clear();
-            (void)source_error_location_to_io(src, &pos);
+            source_error_location_to_io(src, &pos);
             io_append_cstr("unknown symbol '");
             io_set_bold_white();
             io_append_char(c);
             io_reset();
             io_append_cstr("'\n");
-            (void)source_invalid_to_io(src, symbol_index, 1);
+            source_error_code_snippet_to_io(src, symbol_index, 1);
             io_print();
             exit(1);
           } break;
@@ -750,9 +757,32 @@ source_to_tokens(struct source *src) {
       }
     }
   }
-  return tokens;
+  lexer.pos = 0;
+  lexer.src = src;
+  return lexer;
 }
 #undef NEW_TOKEN
+
+struct token *
+lexer_chop(struct lexer *lexer) {
+  if (!lexer || !lexer->tokens) return 0;
+  if (lexer->pos >= tape_len(lexer->tokens)) return 0;
+  return &lexer->tokens[lexer->pos++];
+}
+
+struct token *
+lexer_peek(const struct lexer *lexer, u64 offset) {
+  if (!lexer || !lexer->tokens) return 0;
+  if (lexer->pos + offset >= tape_len(lexer->tokens)) return 0;
+  return &lexer->tokens[lexer->pos + offset];
+}
+
+void
+lexer_rewind(struct lexer *lexer) {
+  if (!lexer || !lexer->tokens) return;
+  if (lexer->pos == 0) return;
+  lexer->pos--;
+}
 
 struct source_position
 token_get_position(const struct source *src, const struct token *tok) {
@@ -765,72 +795,552 @@ token_get_position(const struct source *src, const struct token *tok) {
   return source_get_position(src, (u64)(tok->data.buf - src->data.buf));
 }
 
-u64
-token_invalid_to_io(struct source *src, const struct token *tok) {
-  if (!src || !src->data.buf || !tok || !tok->data.buf || tok->data.buf < src->data.buf || tok->data.buf >= src->data.buf + src->data.len) {
-    return false;
-  }
-  return source_invalid_to_io(src, (u64)(tok->data.buf - src->data.buf), tok->data.len);
+void
+token_error_code_snippet_to_io(struct source *src, const struct token *tok) {
+  if (!src || !src->data.buf || !tok || !tok->data.buf || tok->data.buf < src->data.buf || tok->data.buf >= src->data.buf + src->data.len) return;
+  source_error_code_snippet_to_io(src, (u64)(tok->data.buf - src->data.buf), tok->data.len);
+}
+
+void
+token_error_begin(struct lexer *lexer, struct token *tok) {
+  struct source_position pos;
+  if (!lexer || lexer->pos >= tape_len(lexer->tokens)) return;
+  pos = token_get_position(lexer->src, tok);
+  io.fd = STDERR;
+  io_clear();
+  source_error_location_to_io(lexer->src, &pos);
+}
+
+void
+token_error_end(struct lexer *lexer, struct token *tok) {
+  if (!lexer || lexer->pos >= tape_len(lexer->tokens)) return;
+  io_append_char('\n');
+  token_error_code_snippet_to_io(lexer->src, tok);
+  io_print();
+  exit(1);
 }
 
 /* parser */
 enum ast_type {
-  AST_EXPR = 0,
+  AST_NONE = 0,
+  AST_ROOT,
   AST_IDEN,
+  AST_GROUP,
   AST_INT,
   AST_DEF_CON,
   AST_DEF_VAR,
   AST_FN,
-  AST_ARG,
-  AST_FN_CALL
+  AST_PARAM,
+  AST_CALL,
+  AST_STRUCT
+};
+
+struct ast_node;
+struct ast_node_slice {
+  struct ast_node **nodes;
+  u64 len;
 };
 
 struct ast_node {
   enum ast_type type;
-  struct ast_node *child;
-  u64 child_amount;
-  struct string data_str;
-  u64 data_int;
+  union {
+    struct { struct ast_node **children;                                                  } root;
+    struct { struct string value;                                                         } iden;
+    struct { u64 value;                                                                   } int_lit;
+    struct { struct string name; struct ast_node *value;                                  } def;
+    struct { struct ast_node *value;                                                      } group;
+    struct { struct ast_node *body; struct ast_node_slice params; struct string ret_type; } fn;
+    struct { struct string name, type;                                                    } param;
+    struct { struct string name; struct ast_node_slice arg_list;                          } call;
+  } data;
+};
+
+struct parser {
+  struct ast_node *ast;
+  struct ast_node **node_refs;
+  struct lexer *lexer;
 };
 
 struct ast_node *
-tokens_to_ast(struct token *tokens) {
-  (void)tokens;
-  io_clear();
-  io_append_cstr("tokens_to_ast: todo");
-  io_println();
-  return 0;
+parser_node_make(struct parser *parser, enum ast_type type) {
+  struct ast_node *node;
+  if (!parser || !parser->ast) return 0;
+  node = tape_push(parser->ast, struct ast_node);
+  assert(node != 0, "exceeded maximum AST capacity");
+  node->type = type;
+  return node;
+}
+
+struct ast_node_slice
+parser_node_slice_make(struct parser *parser, u64 amount) {
+  struct ast_node_slice slice;
+  if (!parser || !parser->ast) {
+    slice.nodes = 0;
+    slice.len = 0;
+    return slice;
+  }
+  slice.nodes = tape_grow(parser->node_refs, amount, struct ast_node *);
+  assert(slice.nodes != 0, "exceeded maximum AST node references capacity");
+  slice.len = amount;
+  return slice;
+}
+
+u64 parse_expression(struct parser *parser, struct ast_node **output, u64 is_part_of_expression);
+
+struct ast_node *
+parse_identifier(struct parser *parser, struct token *tok) {
+  struct ast_node *node;
+  node = parser_node_make(parser, AST_IDEN);
+  node->data.iden.value = tok->data;
+  return node;
+}
+
+struct ast_node *
+parse_integer_literal(struct parser *parser, struct token *tok) {
+  struct ast_node *node;
+  struct stu64_result int_val;
+  node = parser_node_make(parser, AST_INT);
+  int_val = string_to_u64(&tok->data);
+  if (int_val.err) {
+    token_error_begin(parser->lexer, tok);
+    io_append_cstr("integer literal is too large");
+    token_error_end(parser->lexer, tok);
+  }
+  node->data.int_lit.value = int_val.val;
+  return node;
+}
+
+struct ast_node *
+parse_symbol_definition(struct parser *parser, u64 *res) {
+  struct ast_node *node;
+  struct token *iden, *assign;
+  iden = lexer_chop(parser->lexer);
+  if (!iden) {
+    token_error_begin(parser->lexer, iden);
+    io_append_cstr("expected identifier, but found end of file");
+    token_error_end(parser->lexer, iden);
+  }
+  if (iden->type != TKN_IDEN) {
+    token_error_begin(parser->lexer, iden);
+    io_append_cstr("expected identifier, but found '");
+    io_set_bold_white();
+    io_append(&iden->data);
+    io_reset();
+    io_append_char('\'');
+    token_error_end(parser->lexer, iden);
+  }
+  assign = lexer_chop(parser->lexer);
+  if (!assign) {
+    token_error_begin(parser->lexer, assign);
+    io_append_cstr("expected '");
+    io_set_bold_white();
+    io_append_char(':');
+    io_reset();
+    io_append_cstr("' or '");
+    io_set_bold_white();
+    io_append_char('=');
+    io_reset();
+    io_append_cstr("', but found end of file");
+    token_error_end(parser->lexer, assign);
+  }
+  if (assign->type == TKN_ASSIGN_CON) {
+    node = parser_node_make(parser, AST_DEF_CON);
+  } else if (assign->type == TKN_ASSIGN_VAR) {
+    node = parser_node_make(parser, AST_DEF_VAR);
+  } else {
+    token_error_begin(parser->lexer, assign);
+    io_append_cstr("expected '");
+    io_set_bold_white();
+    io_append_char(':');
+    io_reset();
+    io_append_cstr("' or '");
+    io_set_bold_white();
+    io_append_char('=');
+    io_reset();
+    io_append_cstr("', but found '");
+    io_set_bold_white();
+    io_append(&assign->data);
+    io_reset();
+    io_append_char('\'');
+    token_error_end(parser->lexer, assign);
+  }
+  node->data.def.name = iden->data;
+  *res = parse_expression(parser, &node->data.def.value, true);
+  return node;
+}
+
+struct ast_node *
+parse_expression_group(struct parser *parser, struct token *rpar, u64 *res) {
+  struct ast_node *node;
+  struct token *next;
+  node = parser_node_make(parser, AST_GROUP);
+  *res = parse_expression(parser, &node->data.group.value, true);
+  next = lexer_chop(parser->lexer);
+  assert(next != 0, "'parse_expression' has some wrong logic somewhere");
+  if (next != rpar) {
+    token_error_begin(parser->lexer, next);
+    io_append_cstr("expected '");
+    io_append_char('\'');
+    io_set_bold_white();
+    io_append_char(')');
+    io_reset();
+    io_append_cstr("', but found '");
+    io_set_bold_white();
+    io_append(&next->data);
+    io_reset();
+    io_append_char('\'');
+    token_error_end(parser->lexer, next);
+  }
+  return node;
+}
+
+struct ast_node *
+parse_function(struct parser *parser, u64 *res, u64 member_amount) {
+  struct ast_node *node;
+  struct token *next;
+  node = parser_node_make(parser, AST_FN);
+  if (member_amount) {
+    struct token *param_tkn;
+    struct ast_node *param;
+    u64 param_idx;
+    node->data.fn.params = parser_node_slice_make(parser, member_amount);
+    for (param_idx = 0; param_idx < member_amount; param_idx++) {
+      param_tkn = lexer_chop(parser->lexer);
+      if (param_tkn->type == TKN_RPAR) break;
+      if (param_tkn->type != TKN_IDEN) {
+        token_error_begin(parser->lexer, param_tkn);
+        io_append_cstr("expected parameter name, but found '");
+        io_set_bold_white();
+        io_append(&next->data);
+        io_reset();
+        io_append_char('\'');
+        token_error_end(parser->lexer, param_tkn);
+      }
+      param = parser_node_make(parser, AST_PARAM);
+      param->data.param.name = param_tkn->data;
+      next = lexer_chop(parser->lexer);
+      if (next->type == TKN_ASSIGN_VAR) {
+        next = lexer_chop(parser->lexer);
+        if (next->type != TKN_IDEN) {
+          token_error_begin(parser->lexer, next);
+          io_append_cstr("expected parameter type, but found '");
+          io_set_bold_white();
+          io_append(&next->data);
+          io_reset();
+          io_append_char('\'');
+          token_error_end(parser->lexer, next);
+        }
+        param->data.param.type = next->data;
+        next = lexer_chop(parser->lexer);
+        if (next->type != TKN_COMMA) {
+          if (next->type != TKN_RPAR) {
+            token_error_begin(parser->lexer, next);
+            io_append_cstr("expected '");
+            io_set_bold_white();
+            io_append_char(')');
+            io_reset();
+            io_append_cstr("', but found '");
+            io_set_bold_white();
+            io_append(&next->data);
+            io_reset();
+            io_append_char('\'');
+            token_error_end(parser->lexer, next);
+          }
+        }
+      } else if (next->type == TKN_COMMA) {
+        u64 i;
+        for (i = 0; ; i++) {
+          next = lexer_peek(parser->lexer, i);
+          if (next->type == TKN_ASSIGN_VAR) {
+            next = lexer_peek(parser->lexer, i);
+            /* don't need to check if 'next' is an identifier
+               * it will cause an error on a future parameter parsing iteration if it isn't */
+            param->data.param.type = next->data; 
+            break;
+          }
+          if (next->type == TKN_RPAR) {
+            token_error_begin(parser->lexer, param_tkn);
+            io_append_cstr("parameter without a type");
+            token_error_end(parser->lexer, param_tkn);
+          }
+        }
+      } else {
+        token_error_begin(parser->lexer, param_tkn);
+        io_append_cstr("parameter without a type");
+        token_error_end(parser->lexer, param_tkn);
+      }
+      node->data.fn.params.nodes[param_idx] = param;
+    }
+  } else {
+    node->data.fn.params.len = 0;
+    next = lexer_chop(parser->lexer);
+    if (next->type != TKN_RPAR) { 
+      token_error_begin(parser->lexer, next);
+      io_append_cstr("expected '");
+      io_set_bold_white();
+      io_append_char(')');
+      io_reset();
+      io_append_cstr("', but found '");
+      io_set_bold_white();
+      io_append(&next->data);
+      io_reset();
+      io_append_char('\'');
+      token_error_end(parser->lexer, next);
+    }
+  }
+  next = lexer_chop(parser->lexer);
+  if (next) {
+    if (next->type == TKN_IDEN) {
+      node->data.fn.ret_type = next->data;
+      next = lexer_chop(parser->lexer);
+    } else {
+      node->data.fn.ret_type.len = 0;
+    }
+    if (next->type != TKN_ASSIGN_BOD) {
+      token_error_begin(parser->lexer, next);
+      io_append_cstr("expected '");
+      io_set_bold_white();
+      io_append_cstr("=>");
+      io_reset();
+      io_append_cstr("' but found '");
+      io_set_bold_white();
+      io_append(&next->data);
+      io_reset();
+      io_append_char('\'');
+      token_error_end(parser->lexer, next);
+    }
+    *res = parse_expression(parser, &node->data.fn.body, true);
+  }
+  return node;
+}
+
+struct ast_node *
+parse_function_call(struct parser *parser, u64 *res, u64 member_amount) {
+  struct ast_node *node;
+  struct string name;
+  name = parser->prv_node->data.iden.value;
+  node = parser->prv_node;
+  node->type = AST_CALL;
+  node->data.call.name = name;
+  if (member_amount) {
+    struct token *next;
+    u64 arg_idx;
+    node->data.call.arg_list = parser_node_slice_make(parser, member_amount);
+    for (arg_idx = 0; arg_idx < member_amount; arg_idx++) {
+      if (!parse_expression(parser, &node->data.call.arg_list.nodes[arg_idx], true)) {
+        *res = false;
+        return 0;
+      }
+      next = lexer_chop(parser->lexer);
+      if (next->type != TKN_COMMA) {
+        token_error_begin(parser->lexer, next);
+        io_append_cstr("expected '");
+        io_set_bold_white();
+        io_append_char(',');
+        io_reset();
+        io_append_cstr("' but found '");
+        io_set_bold_white();
+        io_append(&next->data);
+        io_reset();
+        io_append_char('\'');
+        token_error_end(parser->lexer, next);
+      }
+    }
+  } else {
+    node->data.call.arg_list.len = 0;
+  }
+  return node;
+}
+
+struct ast_node *
+parse_parenthesis(struct parser *parser, struct token *tok, u64 *res, u64 *is_part_of_expression) {
+  struct ast_node *node;
+  struct token *rpar;
+  struct token *next;
+  enum ast_type type;
+  u64 rpar_offset, skip_rpar, member_amount;
+  skip_rpar = false;
+  member_amount = 0;
+  for (rpar_offset = 0; ; rpar_offset++) {
+    rpar = lexer_peek(parser->lexer, rpar_offset);
+    if (!rpar) {
+      token_error_begin(parser->lexer, tok);
+      io_append_char('\'');
+      io_set_bold_white();
+      io_append_char('(');
+      io_reset();
+      io_append_cstr("' without closing '");
+      io_set_bold_white();
+      io_append_char(')');
+      io_reset();
+      io_append_char('\'');
+      token_error_end(parser->lexer, tok);
+    }
+    if (rpar->type == TKN_LPAR) {
+      skip_rpar = true;
+    } else if (rpar->type == TKN_RPAR) {
+      if (skip_rpar) skip_rpar = false;
+      else break;
+    } else if (rpar->type == TKN_COMMA && !skip_rpar) {
+      member_amount++;
+    }
+  }
+  type = AST_GROUP;
+  next = lexer_peek(parser->lexer, 0);
+  if (parser->prv_node) {
+    io_clear();
+    io_append_u64(parser->prv_node->type);
+    io_println();
+  }
+  if (parser->prv_node && parser->prv_node->type == AST_IDEN) {
+    type = AST_CALL;
+    member_amount += next != rpar;
+  } else if (next->type == TKN_IDEN) {
+    member_amount++;
+    next = lexer_peek(parser->lexer, 1);
+    if (next->type == TKN_ASSIGN_VAR || next->type == TKN_COMMA) {
+      type = AST_STRUCT;
+      next = lexer_peek(parser->lexer, rpar_offset + 1);
+      if (next) {
+        if (next->type == TKN_ASSIGN_BOD) {
+          type = AST_FN;
+        } else if (next->type == TKN_IDEN) {
+          next = lexer_peek(parser->lexer, rpar_offset + 2);
+          if (next && next->type == TKN_ASSIGN_BOD) type = AST_FN;
+        }
+      }
+    }
+  } else if (next == rpar) {
+    next = lexer_peek(parser->lexer, 1);
+    if (next && next->type == TKN_ASSIGN_BOD) type = AST_FN;
+  }
+  if (type == AST_GROUP) {
+    node = parse_expression_group(parser, rpar, res);
+  } else if (type == AST_FN) {
+    node = parse_function(parser, res, member_amount);
+  } else if (type == AST_CALL) {
+    *is_part_of_expression = true;
+    node = parse_function_call(parser, res, member_amount);
+  } else if (type == AST_STRUCT) {
+    assert(0, "structs aren't handled yet");
+  } else {
+    assert(0, "parse_parenthesis: unreachable");
+  }
+  return node;
+}
+
+u64
+parse_expression(struct parser *parser, struct ast_node **output, u64 is_part_of_expression) {
+  u64 res;
+  struct ast_node *node;
+  struct token *tok;
+  tok = lexer_chop(parser->lexer);
+  if (!parser->lexer || !parser || !output || !tok) return false;
+  res = true;
+  switch (tok->type) {
+    case TKN_IDEN: {
+      node = parse_identifier(parser, tok);
+    } break;
+    case TKN_INT: {
+      node = parse_integer_literal(parser, tok);
+    } break;
+    case TKN_DEF: {
+      node = parse_symbol_definition(parser, &res);
+    } break;
+    case TKN_LPAR: {
+      node = parse_parenthesis(parser, tok, &res, &is_part_of_expression);
+    } break;
+    default: {
+      token_error_begin(parser->lexer, tok);
+      io_append_char('\'');
+      io_set_bold_white();
+      io_append(&tok->data);
+      io_reset();
+      io_append_cstr("' isn't a valid expression start");
+      token_error_end(parser->lexer, tok);
+    } break;
+  }
+  if (!is_part_of_expression) {
+    struct token *semicolon = lexer_chop(parser->lexer);
+    if (!semicolon) {
+      token_error_begin(parser->lexer, semicolon);
+      io_append_cstr("expected '");
+      io_set_bold_white();
+      io_append_char(';');
+      io_reset();
+      io_append_cstr("', but found end of file");
+      token_error_end(parser->lexer, semicolon);
+    }
+    if (semicolon->type != TKN_SEMICOLON) {
+      token_error_begin(parser->lexer, semicolon);
+      io_append_cstr("expected '");
+      io_set_bold_white();
+      io_append_char(';');
+      io_reset();
+      io_append_cstr("', but found '");
+      io_set_bold_white();
+      io_append(&semicolon->data);
+      io_reset();
+      io_append_char('\'');
+      token_error_end(parser->lexer, semicolon);
+    }
+  }
+  *output = node;
+  return res;
+}
+
+struct parser
+lexer_to_parser(struct lexer *lexer) {
+  struct parser parser;
+  struct ast_node *root, **next;
+  parser.lexer = lexer;
+  parser.ast = tape_make(sizeof (struct ast_node), 0);
+  assert(parser.ast != 0, "couldn't allocate enough memory for the AST");
+  parser.node_refs = tape_make(sizeof (struct ast_node *), 0);
+  assert(parser.ast != 0, "couldn't allocate enough memory for the AST");
+  root = parser_node_make(&parser, AST_ROOT);
+  root->data.root.children = tape_make(sizeof (struct ast_node *), 0);
+  assert(root->data.root.children != 0, "couldn't allocate enough memory for the AST root node");
+  do {
+    next = tape_push(root->data.root.children, struct ast_node *);
+    assert(next != 0, "exceeded maximum AST root node capacity");
+  } while (parse_expression(&parser, next, false));
+  return parser;
 }
 
 /* entry point */
 void
 _start(void) {
   struct source src;
-  struct token *tokens;
-  struct ast_node *ast;
-  u64 i;
+  struct lexer lexer;
+  struct parser parser;
 
   io_make();
 
   src    = file_to_source("./first.sk");
-  tokens = source_to_tokens(&src);
-  ast    = tokens_to_ast(tokens);
-  (void)ast;
+  lexer  = source_to_lexer(&src);
+  parser = lexer_to_parser(&lexer);
+  (void)parser;
 
-  io_clear();
-  for (i = 0; i < tape_len(tokens); i++) {
-    struct source_position pos = token_get_position(&src, &tokens[i]);
-    struct string type = token_to_string(tokens[i].type);
-    (void)source_error_location_to_io(&src, &pos);
-    io_append(&type);
-    io_append_cstr(" '");
-    io_set_bold_white();
-    io_append(&tokens[i].data);
-    io_reset();
-    io_append_cstr("'\n");
-    (void)token_invalid_to_io(&src, &tokens[i]);
+#if 0
+  {
+    u64 i;
+    io_clear();
+    for (i = 0; i < tape_len(tokens); i++) {
+      struct source_position pos = token_get_position(&src, &tokens[i]);
+      struct string type = token_to_string(tokens[i].type);
+      (void)source_error_location_to_io(&src, &pos);
+      io_append(&type);
+      io_append_cstr(" '");
+      io_set_bold_white();
+      io_append(&tokens[i].data);
+      io_reset();
+      io_append_cstr("'\n");
+      (void)token_error_code_snippet_to_io(&src, &tokens[i]);
+    }
+    io_print();
   }
-  io_print();
+#endif
 
   exit(0);
 }

@@ -1,8 +1,7 @@
 # exit system calll
-def exit : (code = u64)=>
+exit ::= (code : u64,) =>
   __syscall__(60, code, 0, 0, 0, 0, 0);
 
 # main entry point
-def main : () =>
-  exit(42);
+main ::= (,) => exit(42);
 
