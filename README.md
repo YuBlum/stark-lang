@@ -1058,7 +1058,6 @@ There are two types of primitive types, the ones that can be assigned to runtime
 - __Strings:__
   - _Regular string (generally 16 or 12 bytes):_ `str`
   - _C string (generally 16 or 8 bytes):_ `cstr`
-- _Vector (128-512 bytes):_ `vec(T, N)`
 
 ### Compile-time-only primitive types
 None of the compile-time-only primitives have a size
@@ -1231,195 +1230,6 @@ RANGE ::= 2..5;
 starting_index := RANGE.start;
 ending_index   := RANGE.end;
 ```
-
-### Vectors
-Vectors are a builtin type that uses SIMD instructions under the hood.
-
-You define a vector by using the following syntax:
-```py
-pos : vec(T, N);
-```
-
-Where `T` is a type and `N` is the vector length.
-
-You can use [array literals](#Arrays) to define a vector with a set of values:
-```py
-a : vec(f32, 3) = [1.0, 2.0, 3.0];
-b : vec(f32, 3) = [3]0.5;
-```
-
-You can also use vector literals:
-```py
-v := vec(1.0, 2.0, 3.0);
-```
-
-All vector literal arguments have to be of the same type:
-```py
-v := vec(1.0, 2, 3.0); # error: type discrepancy
-```
-
-The actual type of the vector will only be revealed by context (see the [inference table](#Type-inference-by-value-table)) for more:
-```py
-v := vec(1, 2, 3);
-x : u64 = v.x; # because of this context the type of 'v' is 'vec(u64, 3)'
-```
-
-A vector can only be of a predefined amount of types. The maximum length of a vector depends on the type and the architecture you're targetting.
-
-Here's a table specifying the valid types and their maximum length per maximum bytes supported for an architecture:
-| Type  | 128-bits | 256-bits | 512-bits |
-|-------|----------|----------|----------|
-| bool  | 16       | 32       | 64       |
-| f32   | 4        | 8        | 16       |
-| f64   | 2        | 4        | 8        |
-| i8    | 16       | 32       | 64       |
-| u8    | 16       | 32       | 64       |
-| i16   | 8        | 16       | 32       |
-| u16   | 8        | 16       | 32       |
-| i32   | 4        | 8        | 16       |
-| u32   | 4        | 8        | 16       |
-| i64   | 2        | 4        | 8        |
-| u64   | 2        | 4        | 8        |
-| isize | 2 or 4   | 4 or 8   | 8 or 16  |
-| usize | 2 or 4   | 4 or 8   | 8 or 16  |
-
-If you use a length that is not supported by your target architecture will generate an error:
-```py
-# target architecture support only up to 128-byte vectors
-pos : vec(f64, 4); # error: 'vec(f64, 4)' isn't supported on current target architecture
-```
-
-If the architecture you're targetting does not support SIMD vector instructions then using `vec(T, N)` will generate an error:
-```py
-# SIMD isn't supported on target architecture
-pos : vec(f32, 4); # error: 'vec(f32, 4)' isn't supported on current target architecture
-```
-
-The minimum supported length for a vector is 2:
-```py
-a : vec(f32, 1); # error: vector of size 1
-```
-
-All operations available for scalars (the four basic operations `+`, `-`, `*`, `/`, bitwise operations `>>`, `<<`, `|`, `&`, `~`, and boolean operations `!=`, `==`, `>`, `<`, `>=`, `<=`) are available for vectors as well:
-```py
-a := vec(1.0, 2.0);
-b := vec(3.0, 4.0);
-c := mut a + b;
-d := mut a - b;
-e := mut a * b;
-f := mut a / b;
-c += a;
-d -= a;
-e *= a;
-f /= a;
-# and so on...
-```
-
-The operations are per-component operations, including the boolean ones. Boolean operations will return a new vector of type `vec(bool, N)`:
-```py
-a := vec(1.0, 2.0, 3.0);
-b := vec(3.0, 2.0, 1.0);
-c := a == b; # c == vec(false, true, false)
-```
-
-As the rest of Stark, all operations are strongly typed:
-```py
-c := vec(1.0, 2.0, 3.0) + vec(4, 5, 6); # error: type mismatched operation
-```
-
-Operations between vectors and scalars are also possible:
-```py
-v := vec(1.0, 2.0);
-a := mut v + 2.0;
-b := mut v - 2.0;
-c := mut v * 2.0;
-d := mut v / 2.0;
-a += 2.0;
-b -= 2.0;
-c *= 2.0;
-d /= 2.0;
-# and so on...
-```
-
-You can access the member of a vector with the `[]` operator:
-```py
-v : mut vec(f32, 8);
-v[0] = 1;
-v[1] = 2;
-v[2] = 3;
-v[3] = 4;
-v[4] = 5;
-v[5] = 6;
-v[6] = 7;
-v[7] = 8;
-```
-
-You can also access the first 4 elements with the `.x` to `.w` and `.r` to `.a`:
-```py
-v : mut vec(f32, 4);
-v.x = 1; # same as 'v[0] = 1'
-v.y = 2; # same as 'v[1] = 2'
-v.z = 3; # same as 'v[2] = 3'
-v.w = 4; # same as 'v[3] = 4'
-v.r += 1; # same as 'v[0] += 1'
-v.g += 2; # same as 'v[1] += 2'
-v.b += 3; # same as 'v[2] += 3'
-v.a += 4; # same as 'v[3] += 4'
-```
-
-Swizzling is also possible between `.x` to `.w` and `.r` to `.a`:
-```py
-v0 : mut vec(f32, 4);
-v0.xy = [1.0, 2.0];
-v0.zw = [3.0, 4.0];
-v1 := mut v0.yx; # v1 is of type 'vec(f32, 2)' with the values '[1.0, 2.0]' 
-v0.rgb = [5.0, 6.0, 7.0];
-v0.ar *= 2.0;
-```
-
-Mixing `.xyzw` with `.rgba` is invalid:
-```py
-v : mut vec(f32, 4);
-v.xyba = [1.0, 2.0, 3.0, 4.0]; # error: invalid vector accessor '.xyba'
-```
-
-abcdefghijklmnopqrstuvwxyz
-
-With swizzling you can repeat a component up to the maximum vector length, the components can be in any order:
-```py
-# architecture support 512-byte vectors
-v : vec(f32, 4);
-_ := v.xyzw; # valid
-_ := v.xxxxxxxx; # valid
-_ := v.wzyxxyzw; # valid
-_ := v.bgraar; # valid
-_ := v.rrrrggggbbbbaaaa; # valid
-```
-
-This type of swizzling are good for vectors up to 4-lanes. For vectors with length greater than that you can swizzle using the syntax `v[idx0 idx1 idx2 idx3 ...]`:
-```py
-v : vec(i8, 64);
-_ := v[32 63 0 10];
-_ := v[0 0 0 0 0 0 0];
-```
-
-Keep in mind that the indices have to be constant for the swizzling to work:
-```py
-v : vec(i8, 64);
-[x, y, z] := 10, 11, 12;
-_ := v[x y z]; # error: swizzling with non-constant values
-```
-
-You can even use ranges (this will not create a [slice](#Slices), but a new vector):
-```py
-v : vec(i8, 64);
-_ := v[10..30];
-```
-
-Vectors are aligned to their byte width:
-- If the `@size_of(T)` times `N` is less than or equal to 16 the alignment is 16
-- If the `@size_of(T)` times `N` is in-between 17 and 32 the alignment is 32
-- If the `@size_of(T)` times `N` is in-between 33 and 64 the alignment is 64
 
 ### Type inference by value table
 | Value            | Decription       | Constant inferred type              | Variable inferred type                                            |
@@ -1726,11 +1536,6 @@ arr1 := f64[3]1.5; # arr1[0] == 1.5f64, arr1[1] == 1.5f64, arr1[2] == 1.5f64. Le
 arr1_explicit : [3]f64 = f64[3]1.5; # same thing, but the array type is explicit
 ```
 
-You can also define an array of implicit length based on the literal:
-```py
-arr : []u64 = [1, 2, 3]; # equivalent to [3]u64
-```
-
 This is good for explicit typing the elements.
 
 You can also initialize arrays to garbage:
@@ -1738,6 +1543,14 @@ You can also initialize arrays to garbage:
 arr : [3]u64 = ---;
 ```
 
+### Copying arrays
+You can use a previously defined array to create a new one:
+```py
+a := [1, 2, 3];
+b := a; # 'b' is a new array
+```
+
+### Destructuring an array
 Array destructuring is possible, this is useful for creating multiple variable with different values:
 ```py
 [a, b, c] := [1, 2, 3];
@@ -1935,8 +1748,8 @@ sum ::= (xs : [..]i32) i32 => {
   for x in xs => res += x;
   ret res;
 };
-def x = sum([1, 2, 3, 4]); # x = 10
-def y = sum[1, 2, 3, 4]; # using the one paremeter call convention
+x := sum([1, 2, 3, 4]); # x = 10
+y := sum[1, 2, 3, 4]; # using the one paremeter call convention
 ```
 
 ### Slice mutability
@@ -1961,6 +1774,207 @@ arr0 := mut [1, 2, 3];
 arr1 := [1, 2, 3];
 slice0 : [..]mut u32 = arr0; # valid
 slice1 : [..]mut u32 = arr1; # invalid
+```
+
+## Vectors
+Vectors are similar to [arrays](#Arrays), but you can do operations on them, and they have a high chance of being optimized with SIMD.
+
+To define a vector use an [array type](#Arrays) prefixed with the keyword `vec`, this is the type of a vector:
+```py
+vector : vec[2]f32;
+```
+
+Keep in mind that it looks like an array, but it's not.
+
+The length of a vector needs to be at least 2:
+```py
+vector : vec[1]f32; # error: vector of lenth 1
+```
+
+To construct a vector use an [array literal](#Arrays) prefixed with the keyword `vec`, this is a vector literal:
+```py
+a := vec[1.0, 2.0, 3.0];
+b := vec[3]0.5;
+c := vec f32[1.0, 2.0, 3.0];
+d := vec f32[3]0.5;
+```
+
+You can get the length of a vector using the builtin `len` overload:
+```py
+v := vec[1, 2, 3, 4];
+v_len := @len(v);
+```
+
+### Valid vector element types
+The element type of a vector can only be one of the following:
+- `bool`
+- `f32`
+- `f64`
+- `i8`
+- `u8`
+- `i16`
+- `u16`
+- `i32`
+- `u32`
+- `i64`
+- `u64`
+
+If an invalid type is used an error will occur:
+```py
+v : vec[3]usize; # error: 'usize' isn't a valid vector element type
+```
+
+### Destructuring a vector
+It's possible to use [array destructuring](#Destructuring-an-array) on vectors:
+```py
+position  := vec[1.0, 2.0, 3.0];
+[x, y, z] := position; 
+```
+
+### Operation on vectors
+All operations available for scalars (the four basic operations `+`, `-`, `*`, `/`, bitwise operations `>>`, `<<`, `|`, `&`, `~`, and boolean operations `!=`, `==`, `>`, `<`, `>=`, `<=`) are available for vectors as well:
+```py
+v0 := vec[1.0, 2.0];
+v1 := vec[3.0, 4.0];
+a := mut v0 + v1;
+b := mut v0 - v1;
+c := mut v0 * v1;
+d := mut v0 / v1;
+a += v0;
+b -= v0;
+c *= v0;
+d /= v0;
+# and so on...
+```
+
+The operations are all per-component operations, including the boolean ones. Boolean operations will return a new vector of type `vec[N]bool`:
+```py
+res := vec[1.0, 2.0, 3.0] == vec[3.0, 2.0, 1.0]; # res == vec[false, true, false]
+```
+
+There are two builtin methods defined at the [base module](#The-base-module) for dealing with `vec[N]bool` in specific: `.all()` and `.some()`:
+```py
+res := (vec[1.0, 2.0, 3.0] == vec[3.0, 2.0, 1.0]).all(); # res == false, not all of the components are 'true'
+res := (vec[1.0, 2.0, 3.0] == vec[3.0, 2.0, 1.0]).some(); # res == true, some of the components are 'true'
+```
+
+As the rest of Stark, all operations are strongly typed:
+```py
+c := vec[1.0, 2.0, 3.0] + vec[4, 5, 6]; # error: type mismatched operation
+```
+
+Operations between vectors and scalars are also possible:
+```py
+v := vec[1.0, 2.0];
+a := mut v + 2.0;
+b := mut v - 2.0;
+c := mut v * 2.0;
+d := mut v / 2.0;
+a += 2.0;
+b -= 2.0;
+c *= 2.0;
+d /= 2.0;
+# and so on...
+```
+
+### Accessing vector components and swizzling
+You can access the member of a vector with the `[]` operator:
+```py
+v : mut vec[5]f32;
+v[0] = 1;
+v[1] = 2;
+v[2] = 3;
+v[3] = 4;
+v[4] = 5;
+```
+
+And you can swizzle the vector components in any order using the `[idx0 idx1 idx2 ...]` syntax:
+```py
+v := vec[1.0, 2.0, 3.0, 4.0, 5.0];
+_ := v[3 2 0 4]; # _ == vec[4.0, 3.0, 1.0, 5.0]
+_ := v[0 0 0 0 0 0 0]; # _ == vec[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+```
+
+Both the simple `[]` accessor and the swizzling will be bound checked.
+
+You can also access the first 4 elements with the `.xyzw` and `.rgba` accessors:
+```py
+v : mut vec[4]f32;
+v.x = 1; # same as 'v[0] = 1'
+v.y = 2; # same as 'v[1] = 2'
+v.z = 3; # same as 'v[2] = 3'
+v.w = 4; # same as 'v[3] = 4'
+v.r += 1; # same as 'v[0] += 1'
+v.g += 2; # same as 'v[1] += 2'
+v.b += 3; # same as 'v[2] += 3'
+v.a += 4; # same as 'v[3] += 4'
+```
+
+Swizzling is also possible using these types of accessors:
+```py
+v0 : mut vec[4]f32;
+v0.xy = vec[1.0, 2.0];
+v0.zw = vec[3.0, 4.0];
+v1 := mut v0.xxyyzzww; # v1 is of type 'vec[8]f32' with the value 'vec[1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]' 
+v0.rgb = [5.0, 6.0, 7.0];
+v0.ar *= 2.0;
+```
+
+Mixing `.xyzw` with `.rgba` is invalid:
+```py
+v : mut vec(f32, 4);
+v.xyba = [1.0, 2.0, 3.0, 4.0]; # error: invalid vector accessor '.xyba'
+```
+
+You can even use ranges (this will not create a [slice](#Slices), but a new vector):
+```py
+v : vec[64]i8;
+_ := v[10..30];
+```
+
+### SIMD vectors
+It's possible to add a modifier called `simd` to a vector. This will make so that the vector will have proper alignment and be safe to use for SIMD instructions.
+
+A `simd` vector can only have a specific length depending on the type and the register size:
+| Type  | Valid sizes (128, 256, 512) |
+|-------|-----------------------------|
+| bool  | 16, 32, 64                  |
+| i8    | 16, 32, 64                  |
+| u8    | 16, 32, 64                  |
+| i16   | 8, 16, 32                   |
+| u16   | 8, 16, 32                   |
+| i32   | 4, 8, 16                    |
+| u32   | 4, 8, 16                    |
+| f32   | 4, 8, 16                    |
+| i64   | 2, 4, 8                     |
+| u64   | 2, 4, 8                     |
+| f64   | 2, 4, 8                     |
+
+If you use an invalid length type match an error will occur:
+```py
+v : simd vec[2]f32; # error: invalid SIMD vector length
+```
+
+Not all architecture supports SIMD registers of 256 or 512 bit, so they will not always be available. If you're in an architecture that only support 128-bit registers if you try to create a vector that would only fit inside a 256 or 512 bit register an error will occur:
+```py
+# architecture only supports 128-bit registers
+v : simd vec[8]f32; # error: SIMD vector length of '8' is not supported by the current target architecture
+```
+
+If the architecture you're targetting does not support SIMD instructions then using `simd` vectors will generate an error:
+```py
+# SIMD isn't supported on target architecture
+pos : simd vec[4]f32; # error: SIMD vectors aren't supported by current target architecture
+```
+
+`simd` vectors are aligned to their byte width:
+- If it's a 128-bit vector the alignment is 16
+- If it's a 256-bit vector the alignment is 32
+- If it's a 512-bit vector the alignment is 64
+
+You can also do operations between SIMD vectors, and as expected they're SIMD operations:
+```py
+v := simd vec[1, 2, 3, 4] + simd vec[5, 6, 7, 8]; # valid
 ```
 
 ## Structs
