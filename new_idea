@@ -1,0 +1,34 @@
+I have the following idea for a programming language:
+the language is as minimal as you can get it has only primitive types (integers and floats), pointers and functions. everything is either a variable (runtime value) or a constant (compile-time value). functions are also constants, they can't be assigned to variables though. it has only `if`/`else` and `while` for control flow. Interop with C. Very simple module system.
+
+there is one special primitive type: ast node.
+it also has one special function called `comptime` (compilation pipeline), you can override this function how many times you want and it has the following signature: receives a source code string and outputs an ast.
+
+this function is the compilation pipeline in itself, it defines how programs go from source code to ast. because you can overwrite this function you can define yourself new features inside this pipeline from simple ones like `struct` to more complex ones like `generic`, `lambda` or even a borrow checker.
+
+remember: `compipe` is just a function written in the language itself.
+
+there is also another function called `precompipe` (pre compilation pipeline). this function defines the compilation pipeline for the `compipe` function. because the `compipe` function defines how code is compiled you would need to use just the bare bone features of the language (which is almost nothing), because of this the `precompipe`exists, it defines the features of the "meta" `compipe` and the functions it calls. `precompipe` also receives a source code string and outputs an AST.
+
+`precompipe` is also just a function written in the language itself.
+
+every function called inside `precompipe` and `precompipe` itself has to use only the bare bones features, kinda of obvious because there is no `preprecompipe` and it wouldn't really make sense to have one.
+
+the full compiler pipeline is the following:
+`precompipe` source code -> JIT
+`compipe` source code -> JITed `precompipe` -> AST -> JIT
+user source code -> JITed `compipe` -> AST -> IR -> backend -> executable
+
+There is something provided with the compiler called `SFL` (Standard Features Library). this library has a definition of `precompipe` and `compipe`, both of them are basically the same function. the features established there are... well the standard ones. it would implement structs, unions, generics, lambdas, defer and a lot of more complex and higher level features. you can think of it as "the language written within the language", this is the standard feature set that are not the ones backed in the language.
+
+but as stated before you can overwrite `compipe` to add any feature that you want into the language. because the `precompipe` defined inside the `SFL` is basically the same functions as `compipe` you can use higher level features inside `compipe`. and of course you can also override `precompipe` as well if you want to add features into the "meta language".
+
+it'll be a practical systems language, not a toy one. and yes after the compiler is the the entire focus will be the SFL, the compile don't receives new features so it doesn't need to be updated. SFL can very much receive new feature like STL receives stuff. but I still want to let the STL be the as minimum and not get into the STL hell. the SFL should only implement really useful and often desired features, if you want more than that you implement on your own.
+
+Is also possible to implement a sort of "expander" of the compiler that grabs the final AST of the user code and outputs how would it be the bare bones version. A version of the to the meta code of `compipe` could also be implemented. This would be for debugging only, the compiler will compile the AST not this bare bones code.
+
+like just imagine:
+you have an per-frame arena in your game engine.
+you decide to add a pass into `comptime` that checks if memory allocated by that arena is returned from functions being stored in non-frame memory and thrown error on that occasions. you could even implement your own syntax and custom pointers for the arena like that per frame arena returns a `void ^` instead of `void *` and its monitored 
+
+and differently from other metaprogramming systems the errors and tooling, linters, etc of user source code can remain stable even with custom language features because you can emit errors yourself and you can add extra info for tooling at any stage with your own AST and so on
